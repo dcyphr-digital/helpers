@@ -113,7 +113,7 @@ trait ImportHelpers
         return 'Other';
     }
 
-    public function checkPostcode($postcode, $state = null)
+    public function checkPostcode($postcode, $state = null): bool
     {
         if (empty($postcode)) {
             return false;
@@ -143,15 +143,17 @@ trait ImportHelpers
         return false;
     }
 
-    public function cleanPhone($phoneString)
+    public function cleanPhone($phoneString) : false|string
     {
         $phoneString = '0'.ltrim($phoneString, 0);
         if (strlen($phoneString) === 10 && in_array(substr($phoneString, 0, 2), ['02', '03', '04', '07', '08'])) {
             return $phoneString;
         }
+
+        return false;
     }
 
-    public function clean($value)
+    public function clean($value): false|string
     {
         $value = trim($value, ' "\'');
 

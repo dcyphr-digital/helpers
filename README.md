@@ -74,15 +74,13 @@ class Persons implements ToCollection
 }
 ```
 
-### Deduplicate latest row per brand + email
+### Deduplicate latest row per group keys
 
 ```php
 use DcyphrDigital\Helpers\Support\Deduplicator;
 
-$items = Deduplicator::latestByBrandAndEmail($items);
-
-// or generic keys:
 $items = Deduplicator::latestByKeys($items, ['brand_id', 'email'], 'source_created_date');
+$items = Deduplicator::latestByKeys($items, ['brand_id', 'email']); // no sort — keeps last in group
 ```
 
 ### Publish config (optional)
@@ -101,7 +99,7 @@ php artisan vendor:publish --tag=dcyphr-helpers-config
 | `workoutState()` / `checkPostcode()` | AU (+ NZ) state from name/postcode |
 | `workoutGender()` | Male / Female / Not Provided |
 | `createDate()` | Import date string parsing |
-| `Deduplicator::latestByBrandAndEmail()` | Keep newest row per brand+email |
+| `Deduplicator::latestByKeys()` | Keep one row per group keys (optional sort) |
 
 ## Dev
 
