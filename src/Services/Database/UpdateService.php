@@ -1,8 +1,8 @@
 <?php
 
-namespace DcyphrDigital\Helpers\Services;
+namespace DcyphrDigital\Helpers\Services\Database;
 
-use DcyphrDigital\Helpers\Services\Rules\RulesProvider;
+use DcyphrDigital\Helpers\Services\Database\Rules\RulesProvider;
 use Illuminate\Database\Eloquent\Model;
 
 class UpdateService

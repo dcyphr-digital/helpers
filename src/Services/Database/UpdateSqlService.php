@@ -1,6 +1,6 @@
 <?php
 
-namespace DcyphrDigital\Helpers\Services;
+namespace DcyphrDigital\Helpers\Services\Database;
 
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;

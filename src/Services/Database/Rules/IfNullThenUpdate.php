@@ -1,6 +1,6 @@
 <?php
 
-namespace DcyphrDigital\Helpers\Services\Rules;
+namespace DcyphrDigital\Helpers\Services\Database\Rules;
 
 class IfNullThenUpdate
 {

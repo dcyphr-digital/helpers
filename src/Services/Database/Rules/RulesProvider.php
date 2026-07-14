@@ -1,10 +1,12 @@
 <?php
 
-namespace DcyphrDigital\Helpers\Services\Rules;
+namespace DcyphrDigital\Helpers\Services\Database\Rules;
+
+use function DcyphrDigital\Helpers\Services\Rules\resolve;
 
 class RulesProvider
 {
-    public const IF_NULL_THEN_UPDATE = 'if_null_then_update';
+    public const string IF_NULL_THEN_UPDATE = 'if_null_then_update';
 
     public function __construct(protected string $rule) {}
 
