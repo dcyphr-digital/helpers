@@ -164,4 +164,12 @@ trait ImportHelpers
     {
         return Str::lower($this->clean($value));
     }
+
+    private function recordInvalidRow(int $rowNumber, \Throwable $e): void
+    {
+        $this->invalidRows[] = [
+            'row_number' => $rowNumber,
+            'error'      => $e->getMessage(),
+        ];
+    }
 }
