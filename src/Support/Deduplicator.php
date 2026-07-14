@@ -1,6 +1,6 @@
 <?php
 
-namespace Dcyphr\Helpers\Support;
+namespace DcyphrDigital\Helpers\Support;
 
 use Illuminate\Support\Collection;
 

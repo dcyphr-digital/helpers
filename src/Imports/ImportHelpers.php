@@ -1,195 +1,165 @@
 <?php
 
-namespace Dcyphr\Helpers\Imports;
+namespace DcyphrDigital\Helpers\Imports;
 
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
 trait ImportHelpers
 {
-    protected function createDate(mixed $dateString): ?Carbon
+    private function createDate($dateString)
     {
-        if ($dateString === '' || $dateString === null) {
-            return null;
+        if ($dateString == '' || $dateString == null) {
+            return;
         }
-
-        $dateString = (string) $dateString;
 
         if (Str::contains($dateString, ['EST', 'EDT'])) {
-            return Carbon::createFromFormat('m/d/y g:ia T', $dateString)
-                ->setTimezone($this->importTimezone());
+            return Carbon::createFromFormat('m/d/y g:ia T', $dateString)->setTimezone('Australia/Sydney');
         }
 
-        $length = strlen($dateString);
-
-        if ($length === 8 || $length === 9 || $length === 10) {
+        if (strlen($dateString) == 8 || strlen($dateString) == 9 || strlen($dateString) == 10) {
             return Carbon::createFromFormat('d/m/Y', $dateString)->startOfDay();
         }
 
-        if ($length === 14 || $length === 15 || $length === 16) {
+        if (strlen($dateString) == 14 || strlen($dateString) == 15 || strlen($dateString) == 16) {
             return Carbon::createFromFormat('d/m/Y G:i', $dateString);
         }
 
         return Carbon::createFromFormat('d/m/Y h:i:s A', $dateString);
     }
 
-    public function workoutGender(mixed $gender): string
+    public function workoutGender($gender): string
     {
-        $normalized = strtolower((string) $gender);
-
-        if (collect(['female', 'f', 'woman'])->contains($normalized)) {
+        if (collect(['female', 'f'])->contains(strtolower($gender))) {
             return 'Female';
         }
-
-        if (collect(['male', 'm', 'man'])->contains($normalized)) {
+        if (collect(['male', 'm'])->contains(strtolower($gender))) {
             return 'Male';
         }
 
         return 'Not Provided';
     }
 
-    public function workoutState(mixed $state = null, mixed $postcode = null): string
+    public function workoutState($state = null, $postcode = null): string
     {
-        $state = strtolower((string) ($state ?? ''));
-        $postcode = (int) $postcode;
-
-        if (collect(['nz', 'new zealand'])->contains($state) || levenshtein('new zealand', $state) < 3) {
+        if (collect(['nz', 'new zealand'])->contains(strtolower($state ?? '')) || levenshtein('new zealand', strtolower($state ?? '')) < 3) {
             return 'NZ';
         }
 
-        if (collect(['act', 'australian capital territory'])->contains($state) || levenshtein('australian capital territory', $state) < 3) {
+        if (collect(['act', 'australian capital territory'])->contains(strtolower($state ?? '')) || levenshtein('australian capital territory', strtolower($state ?? '')) < 3) {
             return 'ACT';
         }
 
-        if (($postcode >= 200 && $postcode <= 299) || ($postcode >= 2600 && $postcode <= 2618) || ($postcode >= 2900 && $postcode <= 2920)) {
+        if (((int) $postcode >= 200 && (int) $postcode <= 299) || ((int) $postcode >= 2600 && (int) $postcode <= 2618) || ((int) $postcode >= 2900 && (int) $postcode <= 2920)) {
             return 'ACT';
         }
 
-        if (collect(['nsw', 'new south wales'])->contains($state) || levenshtein('new south wales', $state) < 3) {
+        if (collect(['nsw', 'new south wales'])->contains(strtolower($state ?? '')) || levenshtein('new south wales', strtolower($state ?? '')) < 3) {
             return 'NSW';
         }
 
-        if (($postcode >= 1000 && $postcode <= 1999) || ($postcode >= 2000 && $postcode <= 2599) || ($postcode >= 2619 && $postcode <= 2899) || ($postcode >= 2921 && $postcode <= 2999)) {
+        if (((int) $postcode >= 1000 && (int) $postcode <= 1999) || ((int) $postcode >= 2000 && (int) $postcode <= 2599) || ((int) $postcode >= 2619 && (int) $postcode <= 2899) || ((int) $postcode >= 2921 && (int) $postcode <= 2999)) {
             return 'NSW';
         }
 
-        if (collect(['nt', 'northern territory'])->contains($state) || levenshtein('northern territory', $state) < 3) {
+        if (collect(['nt', 'northern territory'])->contains(strtolower($state ?? '')) || levenshtein('northern territory', strtolower($state ?? '')) < 3) {
             return 'NT';
         }
 
-        if (($postcode >= 800 && $postcode <= 899) || ($postcode >= 900 && $postcode <= 999)) {
+        if (((int) $postcode >= 800 && (int) $postcode <= 899) || ((int) $postcode >= 900 && (int) $postcode <= 999)) {
             return 'NT';
         }
 
-        if (collect(['qld', 'queensland'])->contains($state) || levenshtein('queensland', $state) < 3) {
+        if (collect(['qld', 'queensland'])->contains(strtolower($state ?? '')) || levenshtein('queensland', strtolower($state ?? '')) < 3) {
             return 'QLD';
         }
 
-        if (($postcode >= 4000 && $postcode <= 4999) || ($postcode >= 9000 && $postcode <= 9999)) {
+        if (((int) $postcode >= 4000 && (int) $postcode <= 4999) || ((int) $postcode >= 9000 && (int) $postcode <= 9999)) {
             return 'QLD';
         }
 
-        if (collect(['sa', 'south australia'])->contains($state) || levenshtein('south australia', $state) < 3) {
+        if (collect(['sa', 'south australia'])->contains(strtolower($state ?? '')) || levenshtein('south australia', strtolower($state ?? '')) < 3) {
             return 'SA';
         }
 
-        if (($postcode >= 5000 && $postcode <= 5799) || ($postcode >= 5800 && $postcode <= 5999)) {
+        if (((int) $postcode >= 5000 && (int) $postcode <= 5799) || ((int) $postcode >= 5800 && (int) $postcode <= 5999)) {
             return 'SA';
         }
 
-        if (collect(['tas', 'tasmania'])->contains($state) || levenshtein('tasmania', $state) < 3) {
+        if (collect(['tas', 'tasmania'])->contains(strtolower($state ?? '')) || levenshtein('tasmania', strtolower($state ?? '')) < 3) {
             return 'TAS';
         }
 
-        if (($postcode >= 7000 && $postcode <= 7799) || ($postcode >= 7800 && $postcode <= 7999)) {
+        if (((int) $postcode >= 7000 && (int) $postcode <= 7799) || ((int) $postcode >= 7800 && (int) $postcode <= 7999)) {
             return 'TAS';
         }
 
-        if (collect(['vic', 'victoria'])->contains($state) || levenshtein('victoria', $state) < 3) {
+        if (collect(['vic', 'victoria'])->contains(strtolower($state ?? '')) || levenshtein('victoria', strtolower($state ?? '')) < 3) {
             return 'VIC';
         }
 
-        if (($postcode >= 3000 && $postcode <= 3999) || ($postcode >= 8000 && $postcode <= 8999)) {
+        if (((int) $postcode >= 3000 && (int) $postcode <= 3999) || ((int) $postcode >= 8000 && (int) $postcode <= 8999)) {
             return 'VIC';
         }
 
-        if (collect(['wa', 'western australia'])->contains($state) || levenshtein('western australia', $state) < 3) {
+        if (collect(['wa', 'western australia'])->contains(strtolower($state ?? '')) || levenshtein('western australia', strtolower($state ?? '')) < 3) {
             return 'WA';
         }
 
-        if (($postcode >= 6000 && $postcode <= 6797) || ($postcode >= 6800 && $postcode <= 6999)) {
+        if (((int) $postcode >= 6000 && (int) $postcode <= 6797) || ((int) $postcode >= 6800 && (int) $postcode <= 6999)) {
             return 'WA';
         }
 
         return 'Other';
     }
 
-    public function checkPostcode(mixed $postcode, mixed $state = null): bool
+    public function checkPostcode($postcode, $state = null)
     {
         if (empty($postcode)) {
             return false;
         }
 
-        $postcode = (string) $postcode;
-        $state = strtolower((string) ($state ?? ''));
+        if (collect(['nz', 'new zealand'])->contains(strtolower($state ?? ''))) {
+            if ((strlen($postcode) == 3 || strlen($postcode) == 4)) {
+                return true;
+            }
 
-        if (collect(['nz', 'new zealand'])->contains($state)) {
-            return strlen($postcode) === 3 || strlen($postcode) === 4;
+            return false;
         }
 
-        $code = (int) $postcode;
+        if (
+            ((int) $postcode >= 200 && (int) $postcode <= 299) || ((int) $postcode >= 2600 && (int) $postcode <= 2618) || ((int) $postcode >= 2900 && (int) $postcode <= 2920) ||
+            ((int) $postcode >= 1000 && (int) $postcode <= 1999) || ((int) $postcode >= 2000 && (int) $postcode <= 2599) || ((int) $postcode >= 2619 && (int) $postcode <= 2899) || ((int) $postcode >= 2921 && (int) $postcode <= 2999) ||
+            ((int) $postcode >= 800 && (int) $postcode <= 899) || ((int) $postcode >= 900 && (int) $postcode <= 999) ||
+            ((int) $postcode >= 4000 && (int) $postcode <= 4999) || ((int) $postcode >= 9000 && (int) $postcode <= 9999) ||
+            ((int) $postcode >= 5000 && (int) $postcode <= 5799) || ((int) $postcode >= 5800 && (int) $postcode <= 5999) ||
+            ((int) $postcode >= 7000 && (int) $postcode <= 7799) || ((int) $postcode >= 7800 && (int) $postcode <= 7999) ||
+            ((int) $postcode >= 3000 && (int) $postcode <= 3999) || ((int) $postcode >= 8000 && (int) $postcode <= 8999) ||
+            ((int) $postcode >= 6000 && (int) $postcode <= 6797) || ((int) $postcode >= 6800 && (int) $postcode <= 6999)
+        ) {
+            return true;
+        }
 
-        return ($code >= 200 && $code <= 299)
-            || ($code >= 2600 && $code <= 2618)
-            || ($code >= 2900 && $code <= 2920)
-            || ($code >= 1000 && $code <= 1999)
-            || ($code >= 2000 && $code <= 2599)
-            || ($code >= 2619 && $code <= 2899)
-            || ($code >= 2921 && $code <= 2999)
-            || ($code >= 800 && $code <= 899)
-            || ($code >= 900 && $code <= 999)
-            || ($code >= 4000 && $code <= 4999)
-            || ($code >= 9000 && $code <= 9999)
-            || ($code >= 5000 && $code <= 5799)
-            || ($code >= 5800 && $code <= 5999)
-            || ($code >= 7000 && $code <= 7799)
-            || ($code >= 7800 && $code <= 7999)
-            || ($code >= 3000 && $code <= 3999)
-            || ($code >= 8000 && $code <= 8999)
-            || ($code >= 6000 && $code <= 6797)
-            || ($code >= 6800 && $code <= 6999);
+        return false;
     }
 
-    public function cleanPhone(mixed $phoneString): ?string
+    public function cleanPhone($phoneString)
     {
-        $phoneString = '0'.ltrim((string) $phoneString, '0');
-
-        if (strlen($phoneString) === 10 && in_array(substr($phoneString, 0, 2), ['02', '03', '04', '07', '08'], true)) {
+        $phoneString = '0'.ltrim($phoneString, 0);
+        if (strlen($phoneString) === 10 && in_array(substr($phoneString, 0, 2), ['02', '03', '04', '07', '08'])) {
             return $phoneString;
         }
-
-        return null;
     }
 
-    public function clean(mixed $value): string
+    public function clean($value)
     {
-        $value = trim((string) $value, " \"'");
-        $value = iconv('UTF-8', 'UTF-8//IGNORE', $value);
+        $value = trim($value, ' "\'');
 
-        return $value === false ? '' : $value;
+        return iconv('UTF-8', 'UTF-8//IGNORE', $value);
     }
 
-    public function normalizeEmail(mixed $value): string
+    public function normalizeEmail($value): string
     {
-        return Str::lower($this->clean((string) $value));
-    }
-
-    protected function importTimezone(): string
-    {
-        if (function_exists('config')) {
-            return (string) config('dcyphr-helpers.import_timezone', 'Australia/Sydney');
-        }
-
-        return 'Australia/Sydney';
+        return Str::lower($this->clean($value));
     }
 }

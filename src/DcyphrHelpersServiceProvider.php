@@ -1,6 +1,6 @@
 <?php
 
-namespace Dcyphr\Helpers;
+namespace DcyphrDigital\Helpers;
 
 use Illuminate\Support\ServiceProvider;
 

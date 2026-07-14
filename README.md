@@ -58,7 +58,7 @@ Tag releases (`1.0.0`, `1.1.0`, …). Apps pick up changes with `composer update
 ### Import helpers (replace duplicated `ImportHelpers` traits)
 
 ```php
-use Dcyphr\Helpers\Imports\ImportHelpers;
+use DcyphrDigital\Helpers\Imports\ImportHelpers;
 
 class Persons implements ToCollection
 {
@@ -67,7 +67,6 @@ class Persons implements ToCollection
     public function collection(Collection $rows): void
     {
         $email = $this->normalizeEmail($row['person_loc_email'] ?? '');
-        // same as: Str::lower($this->clean(...))
 
         $state = $this->workoutState($row['state'] ?? null, $row['postcode'] ?? null);
         $phone = $this->cleanPhone($row['phone'] ?? null);
@@ -78,7 +77,7 @@ class Persons implements ToCollection
 ### Deduplicate latest row per brand + email
 
 ```php
-use Dcyphr\Helpers\Support\Deduplicator;
+use DcyphrDigital\Helpers\Support\Deduplicator;
 
 $items = Deduplicator::latestByBrandAndEmail($items);
 
