@@ -160,7 +160,8 @@ trait ImportHelpers
         return iconv('UTF-8', 'UTF-8//IGNORE', $value);
     }
 
-    public function normalizeEmail($value): string
+
+    public function normalize($value): string
     {
         return Str::lower($this->clean($value));
     }
