@@ -4,7 +4,6 @@ namespace DcyphrDigital\Helpers\Support;
 
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use function App\Helpers\now;
 
 trait CleansUpDirectory
 {
