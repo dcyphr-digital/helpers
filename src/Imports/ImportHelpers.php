@@ -160,6 +160,10 @@ trait ImportHelpers
         return iconv('UTF-8', 'UTF-8//IGNORE', $value);
     }
 
+    public function normalizeEmail(mixed $value): string
+    {
+        return $this->normalize((string) ($value ?? ''));
+    }
 
     public function normalize($value): string
     {

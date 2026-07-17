@@ -13,6 +13,7 @@ enum PlatformName: string
     case Stock = 'stock';
     case Bazaar = 'bazaar';
     case CampaignMonitor = 'campaign_monitor';
+    case PreferenceCentre = 'preference_centre';
     case DataSftp = 'data_sftp';
 
     public static function values(): array

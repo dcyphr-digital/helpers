@@ -3,6 +3,7 @@
 namespace DcyphrDigital\Helpers\Support;
 
 use App\Models\Bazaar\Brand as BazaarBrand;
+use App\Models\PreferenceCentre\Brand as PreferenceCentreBrand;
 use App\Models\Bazaar\Marketplace as BazaarMarketplace;
 use App\Models\Brand;
 use App\Models\Crm\Brand as CrmBrand;
@@ -178,6 +179,7 @@ trait CommandFiltersTrait
             PlatformName::Crm                                                  => $this->crmBrand->id,
             PlatformName::Klaviyo, PlatformName::Sendgrid, PlatformName::Stock => $this->brand->id,
             PlatformName::Bazaar                                               => $this->resolveBazaarBrandId(),
+            PlatformName::PreferenceCentre                                     => $this->resolvePCBrandId(),
             PlatformName::WebsiteUI                                            => 0, // for website_ui we don't need a brand_id so it's always 0'
             default                                                            => throw new InvalidArgumentException('Invalid incoming platform name'),
         };
@@ -309,5 +311,13 @@ trait CommandFiltersTrait
         return BazaarMarketplace::query()
             ->where('name', $this->argument('marketplace_name'))
             ->firstOrFail();
+    }
+
+    private function resolvePCBrandId(): int
+    {
+        return (int) PreferenceCentreBrand::query()
+            ->where('name', $this->brand?->name ?? $this->argument('brand_name'))
+            ->firstOrFail()
+            ->id;
     }
 }
