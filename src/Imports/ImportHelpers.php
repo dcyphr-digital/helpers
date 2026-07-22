@@ -177,4 +177,9 @@ trait ImportHelpers
             'error'      => $e->getMessage(),
         ];
     }
+
+    private function isEmailValid(string $email): bool
+    {
+        return $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL);
+    }
 }
