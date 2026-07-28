@@ -9,6 +9,24 @@ use Illuminate\Support\Str;
 
 trait WebsiteProductHelper
 {
+    public const GENDERS = ['male', 'female', 'unisex'];
+
+    public const FEED_SHOE_PRODUCT_TYPE = 'Apparel & Accessories > Shoes';
+
+    public const FEED_CLOTHING_PRODUCT_TYPE = 'Apparel & Accessories > Clothing > Activewear';
+
+    public function getGenderLabel(?string $gender): ?string
+    {
+        [$male, $female, $unisex] = self::GENDERS;
+
+        return match (Str::lower((string) $gender)) {
+            $female => "Women's",
+            $male   => "Men's",
+            $unisex => 'Unisex',
+            default => null,
+        };
+    }
+
     public function extractProductsCategories(?Collection $products, ?array $allowedAttributeKeys = null): Collection
     {
         $categories = collect();
@@ -198,5 +216,19 @@ trait WebsiteProductHelper
         }
 
         return $productName;
+    }
+
+    private function formatColor(?string $color): string
+    {
+        $color = trim((string) $color);
+
+        if ($color === '') {
+            return '';
+        }
+
+        return collect(explode('/', $color))
+            ->map(fn (string $part) => Str::title(strtolower(trim($part))))
+            ->filter(fn (string $part) => $part !== '')
+            ->implode('/');
     }
 }
