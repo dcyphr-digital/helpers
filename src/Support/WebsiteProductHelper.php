@@ -11,20 +11,40 @@ trait WebsiteProductHelper
 {
     public const GENDERS = ['male', 'female', 'unisex'];
 
+    public const GENDER_ATTRIBUTE_KEY = 'gender';
+
     public const FEED_SHOE_PRODUCT_TYPE = 'Apparel & Accessories > Shoes';
 
     public const FEED_CLOTHING_PRODUCT_TYPE = 'Apparel & Accessories > Clothing > Activewear';
 
     public function getGenderLabel(?string $gender): ?string
     {
-        [$male, $female, $unisex] = self::GENDERS;
-
         return match (Str::lower((string) $gender)) {
-            $female => "Women's",
-            $male   => "Men's",
-            $unisex => 'Unisex',
-            default => null,
+            'm', 'male', 'men', "men's"            => "Men's",
+            'f', 'w', 'female', 'women', "women's" => "Women's",
+            'u', 'unisex'                          => 'Unisex',
+            default                                => null,
         };
+    }
+
+    public function getGenderFromProductAttribute(?Product $product): string
+    {
+        if ($product?->productProductAttributes === null) {
+            return '';
+        }
+
+        $value = $product->productProductAttributes
+            ->sortBy('sequence')
+            ->map(fn ($productProductAttribute) => $productProductAttribute->productAttribute)
+            ->filter(fn ($productAttribute) => Str::lower((string) ($productAttribute?->key ?? '')) === self::GENDER_ATTRIBUTE_KEY)
+            ->map(fn ($productAttribute) => trim((string) ($productAttribute->value ?? '')))
+            ->first(fn (string $value) => $value !== '');
+
+        if ($value === null) {
+            return '';
+        }
+
+        return $this->getGenderLabel($value) ?? '';
     }
 
     public function extractProductsCategories(?Collection $products, ?array $allowedAttributeKeys = null): Collection
