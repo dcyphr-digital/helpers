@@ -12,6 +12,9 @@ enum PlatformName: string
     case WebsiteUI = 'website_ui';
     case Stock = 'stock';
     case Bazaar = 'bazaar';
+    case Loyalty = 'loyalty';
+    case Shopify = 'shopify';
+    case Iconic = 'iconic';
     case CampaignMonitor = 'campaign_monitor';
     case PreferenceCentre = 'preference_centre';
     case DataSftp = 'data_sftp';

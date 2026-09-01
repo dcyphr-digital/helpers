@@ -7,6 +7,7 @@ use App\Models\PreferenceCentre\Brand as PreferenceCentreBrand;
 use App\Models\Bazaar\Marketplace as BazaarMarketplace;
 use App\Models\Brand;
 use App\Models\Crm\Brand as CrmBrand;
+use App\Models\Loyalty\Brand as LoyaltyBrand;
 use Carbon\Carbon;
 use DcyphrDigital\Helpers\Enums\PlatformName;
 use Illuminate\Support\Str;
@@ -117,10 +118,14 @@ trait CommandFiltersTrait
 
     private function setupBrands(): void
     {
-        $this->brand = Brand::where('name', $this->argument('brand_name'))->firstOrFail();
-        $this->crmBrand = CrmBrand::where('brand', $this->brand->name)->firstOrFail();
+        $this->brand = Brand::where('name', $this->argument('brand_name'))->first() ?? null;
+
+        $this->crmBrand = class_exists(CrmBrand::class)
+            ? CrmBrand::where('brand', $this->brand->name)->first()
+            : null;
+
         $this->filters['brand_id'] = $this->brand->id;
-        $this->filters['crm_brand_id'] = $this->crmBrand->id;
+        $this->filters['crm_brand_id'] = $this->crmBrand?->id;
 
         /** @var list<array{platform: string, brand_id: int}> $incomingPlatforms */
         $incomingPlatforms = $this->buildIncomingPlatformsWithBrandIds();
@@ -180,6 +185,7 @@ trait CommandFiltersTrait
             PlatformName::Klaviyo, PlatformName::Sendgrid, PlatformName::Stock => $this->brand->id,
             PlatformName::Bazaar                                               => $this->resolveBazaarBrandId(),
             PlatformName::PreferenceCentre                                     => $this->resolvePCBrandId(),
+            PlatformName::Loyalty                                              => $this->resolveLoyaltyBrandId(),
             PlatformName::WebsiteUI                                            => 0, // for website_ui we don't need a brand_id so it's always 0'
             default                                                            => throw new InvalidArgumentException('Invalid incoming platform name'),
         };
@@ -188,7 +194,7 @@ trait CommandFiltersTrait
     private function outgoingBrandIdForPlatform(PlatformName $platform): int
     {
         return match ($platform) {
-            PlatformName::Klaviyo, PlatformName::TripleWhale, PlatformName::Sendgrid, PlatformName::Stock => $this->brand->id,
+            PlatformName::Klaviyo, PlatformName::TripleWhale, PlatformName::Sendgrid, PlatformName::Stock, PlatformName::Shopify, PlatformName::Iconic => $this->brand->id,
             PlatformName::Crm, PlatformName::DataSftp                                                     => $this->crmBrand->id,
             default                                                                                       => throw new InvalidArgumentException('Invalid outgoing platform name'),
         };
@@ -316,6 +322,14 @@ trait CommandFiltersTrait
     private function resolvePCBrandId(): int
     {
         return (int) PreferenceCentreBrand::query()
+            ->where('name', $this->brand?->name ?? $this->argument('brand_name'))
+            ->firstOrFail()
+            ->id;
+    }
+
+    private function resolveLoyaltyBrandId(): int
+    {
+        return (int) LoyaltyBrand::query()
             ->where('name', $this->brand?->name ?? $this->argument('brand_name'))
             ->firstOrFail()
             ->id;
