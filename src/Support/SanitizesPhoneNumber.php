@@ -49,6 +49,10 @@ trait SanitizesPhoneNumber
         $originalPhoneNumber = (string) $phoneNumber;
         $phoneNumber = $this->normalizePhoneNumber($originalPhoneNumber);
 
+        if($this->isInvalidAustralianPhoneNumber($country, $phoneNumber)){
+            return null;
+        }
+
         if ($country && array_key_exists($country, self::REPLACE_OUTGOING_PHONE_CODE)) {
             $phoneNumber = Str::replaceFirst(
                 self::REPLACE_OUTGOING_PHONE_CODE[$country]['search'],
@@ -98,4 +102,8 @@ trait SanitizesPhoneNumber
         return Str::lower($this->brand->configuration->country ?? null);
     }
 
+    protected function isInvalidAustralianPhoneNumber(?string $country, string $phoneNumber): bool
+    {
+        return $country === self::AUSTRALIA && ! Str::startsWith($phoneNumber, '04');
+    }
 }
