@@ -7,14 +7,16 @@ use InvalidArgumentException;
 
 trait SanitizesPhoneNumber
 {
+    public const AUSTRALIA = 'australia';
+    public const NEW_ZEALAND = 'new zealand';
     public const REPLACE_OUTGOING_PHONE_CODE = [
-        'Australia' => [
+        self::AUSTRALIA => [
             'search'     => '0',
             'replace'    => '+61',
             'min_length' => 12,
             'max_length' => 12,
         ],
-        'New Zealand' => [
+        self::NEW_ZEALAND => [
             'search'     => '0',
             'replace'    => '+64',
             'min_length' => 11,
@@ -23,13 +25,13 @@ trait SanitizesPhoneNumber
     ];
 
     public const REPLACE_INCOMING_PHONE_CODE = [
-        'Australia' => [
+        self::AUSTRALIA => [
             'search'     => '+61',
             'replace'    => '0',
             'min_length' => 10,
             'max_length' => 10,
         ],
-        'New Zealand' => [
+        self::NEW_ZEALAND => [
             'search'     => '+64',
             'replace'    => '0',
             'min_length' => 8,
@@ -71,7 +73,6 @@ trait SanitizesPhoneNumber
         $country ??= $this->resolvePhoneCountry();
         $originalPhoneNumber = (string) $phoneNumber;
         $phoneNumber = $this->normalizePhoneNumber($originalPhoneNumber);
-
         if ($country && array_key_exists($country, self::REPLACE_INCOMING_PHONE_CODE)) {
             $phoneNumber = Str::replaceFirst(
                 self::REPLACE_INCOMING_PHONE_CODE[$country]['search'],
@@ -91,9 +92,10 @@ trait SanitizesPhoneNumber
     {
         return preg_replace('/[\s\-\(\)]+/', '', $phoneNumber);
     }
-    
+
     protected function resolvePhoneCountry(): ?string
     {
-        return $this->brand->configuration->country ?? null;
+        return Str::lower($this->brand->configuration->country ?? null);
     }
+
 }
