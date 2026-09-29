@@ -46,10 +46,11 @@ trait SanitizesPhoneNumber
         }
 
         $country ??= $this->resolvePhoneCountry();
+        $country = is_string($country) ? Str::lower($country) : null;
         $originalPhoneNumber = (string) $phoneNumber;
         $phoneNumber = $this->normalizePhoneNumber($originalPhoneNumber);
 
-        if($this->isInvalidAustralianPhoneNumber($country, $phoneNumber)){
+        if ($this->isInvalidAustralianPhoneNumber($country, $phoneNumber)) {
             return null;
         }
 
@@ -75,6 +76,7 @@ trait SanitizesPhoneNumber
         }
 
         $country ??= $this->resolvePhoneCountry();
+        $country = is_string($country) ? Str::lower($country) : null;
         $originalPhoneNumber = (string) $phoneNumber;
         $phoneNumber = $this->normalizePhoneNumber($originalPhoneNumber);
         if ($country && array_key_exists($country, self::REPLACE_INCOMING_PHONE_CODE)) {
