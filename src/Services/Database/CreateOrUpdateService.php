@@ -132,6 +132,9 @@ class CreateOrUpdateService
                 level: 'error',
                 message: 'Creating or updating record failed',
                 data: [
+                    'model' => $this->model::class,
+                    // The match keys of the items being written, so the failing batch can be found
+                    'match' => array_map(fn (array $item) => Arr::only($item, $matchKeys), $this->items),
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
                 ]
