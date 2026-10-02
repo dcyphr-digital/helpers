@@ -17,7 +17,8 @@ use Illuminate\Support\Str;
  *  1. column rules: NOT NULL, enum values, integer values, varchar/char length
  *  2. unique indexes against rows already in the table (the stored row wins)
  *  3. unique indexes within the items themselves:
- *     - items that would be created are all rejected when they share a value;
+ *     - items that would be created are all rejected when they share a value, or with
+ *       $firstCreateWins only the first of them is kept, when no update claims the value;
  *     - items that update a stored record keep only the newest (by created_at, then
  *       updated_at, then id when the table has them, otherwise the last item in the batch)
  *
@@ -52,6 +53,8 @@ class ConstraintValidator
     /** @var list<string> */
     private array $matchKeys = [];
 
+    private bool $firstCreateWins = false;
+
     /**
      * @param  Closure(list<string> $columns, list<array> $tuples): list<array>  $findExistingRows
      *                                                                           Returns stored rows whose `$columns` values match any of `$tuples`.
@@ -68,12 +71,20 @@ class ConstraintValidator
      *                                           already loaded them; null to load them with findExistingRows
      * @param  list<string>|null  $updateColumns  columns written when an item updates a stored record (match keys
      *                                            are always included); null when an update may write any column
+     * @param  bool  $firstCreateWins  keep the first of several new items sharing a unique value instead of
+     *                                 rejecting them all, so the result does not depend on how items are batched
      * @return array{valid: list<array>, rejected: list<array{item: array, reasons: list<string>}>}
      */
-    public function validate(array $items, array $matchKeys = [], ?array $storedRecords = null, ?array $updateColumns = null): array
-    {
+    public function validate(
+        array $items,
+        array $matchKeys = [],
+        ?array $storedRecords = null,
+        ?array $updateColumns = null,
+        bool $firstCreateWins = false,
+    ): array {
         $this->rejected = [];
         $this->matchKeys = $matchKeys;
+        $this->firstCreateWins = $firstCreateWins;
         $this->updateColumns = $updateColumns === null ? null : array_values(array_unique([...$updateColumns, ...$matchKeys]));
 
         $items = array_map(fn (array $item) => $this->emptyStringsToNull($item), $items);
@@ -253,7 +264,8 @@ class ConstraintValidator
 
     /**
      * When several items share the same unique values:
-     *  - every item that would be created is rejected (none of them can be trusted);
+     *  - every item that would be created is rejected (none of them can be trusted), or with
+     *    firstCreateWins and no update sharing the value, all but the first in the batch;
      *  - of the items that update an existing record, only the newest is kept
      *    (see isNewerThan for how "newest" is decided).
      *
@@ -278,7 +290,18 @@ class ConstraintValidator
             $updates = array_values(array_filter($positions, fn ($position) => isset($this->updatePositions[$position])));
             $creates = array_diff($positions, $updates);
 
+            // An update claiming the value always wins, as a stored record does across batches
+            $keptCreate = $this->firstCreateWins && empty($updates) ? array_values($creates)[0] : null;
+
             foreach ($creates as $position) {
+                if ($keptCreate !== null) {
+                    if ($position !== $keptCreate) {
+                        $rejectReasonByPosition[$position] = 'is already used by an earlier item in this batch'.$this->identify([$items[$keptCreate]]);
+                    }
+
+                    continue;
+                }
+
                 $others = array_map(fn ($other) => $items[$other], array_diff($positions, [$position]));
                 $rejectReasonByPosition[$position] = 'is used by more than one item in this batch'.$this->identify($others, 'also ');
             }

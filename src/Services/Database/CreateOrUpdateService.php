@@ -69,6 +69,8 @@ class CreateOrUpdateService
      *                                     length or unique constraints instead of letting the whole batch fail.
      *                                     Items that update a stored record are only checked on the columns the
      *                                     update writes (reliable + match keys), unless rules may write others.
+     * @param  bool  $firstCreateWins  With validateConstraints, keep the first of several new items sharing a
+     *                                 unique value instead of skipping them all.
      */
     public function handle(
         array $reliableKeys,
@@ -79,6 +81,7 @@ class CreateOrUpdateService
         bool $onlyCreate = false,
         array $additionalSelectColumns = [],
         bool $validateConstraints = false,
+        bool $firstCreateWins = false,
     ): bool {
         $this->toCreate = [];
         $this->toUpdate = [];
@@ -105,6 +108,7 @@ class CreateOrUpdateService
                 $this->removeItemsBreakingConstraints(
                     matchKeys: $matchKeys,
                     updateColumns: empty($rules) ? $reliableKeys : null,
+                    firstCreateWins: $firstCreateWins,
                 );
 
                 if (empty($this->items)) {
@@ -143,7 +147,7 @@ class CreateOrUpdateService
     /**
      * @param  list<string>|null  $updateColumns  columns an update writes; null when it may write any column
      */
-    private function removeItemsBreakingConstraints(array $matchKeys, ?array $updateColumns): void
+    private function removeItemsBreakingConstraints(array $matchKeys, ?array $updateColumns, bool $firstCreateWins): void
     {
         $validator = new ConstraintValidator(
             table: TableConstraints::fromModel($this->model),
@@ -155,6 +159,7 @@ class CreateOrUpdateService
             matchKeys: $matchKeys,
             storedRecords: $this->existingRecords,
             updateColumns: $updateColumns,
+            firstCreateWins: $firstCreateWins,
         );
 
         $this->items = $result['valid'];

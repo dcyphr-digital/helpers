@@ -466,6 +466,39 @@ class ConstraintValidatorTest extends TestCase
         $this->assertStringNotContainsString('Secret', $reasons);
     }
 
+    public function test_with_first_create_wins_only_the_first_new_item_sharing_a_value_is_kept(): void
+    {
+        $result = $this->validator()->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 42, 'email' => 'one@test.com']),
+            $this->member(['crm_id' => 2, 'website_id' => 42, 'email' => 'two@test.com']),
+            $this->member(['crm_id' => 3, 'website_id' => 42, 'email' => 'three@test.com']),
+            $this->member(['crm_id' => 4, 'website_id' => 43, 'email' => 'four@test.com']),
+        ], ['brand_id', 'crm_id'], firstCreateWins: true);
+
+        $this->assertSame([1, 4], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([2, 3], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
+        $this->assertSame(
+            ["(brand_id, website_id) is already used by an earlier item in this batch (brand_id '1', crm_id '1')"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_with_first_create_wins_an_update_sharing_the_value_still_beats_every_new_item(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 1, 'website_id' => 1, 'email' => 'a@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 2, 'website_id' => 42, 'email' => 'two@test.com']),
+            $this->member(['crm_id' => 3, 'website_id' => 42, 'email' => 'three@test.com']),
+            $this->member(['crm_id' => 1, 'website_id' => 42, 'email' => 'a@test.com']),
+        ], ['brand_id', 'crm_id'], firstCreateWins: true);
+
+        $this->assertSame([1], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([2, 3], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
+    }
+
     public function test_a_create_is_still_checked_on_every_column(): void
     {
         $result = $this->validator()->validate([
