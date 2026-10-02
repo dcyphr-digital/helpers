@@ -118,11 +118,18 @@ trait CommandFiltersTrait
 
     private function setupBrands(): void
     {
-        $this->brand = Brand::where('name', $this->argument('brand_name'))->first() ?? null;
+        $brandName = $this->argument('brand_name');
+
+        $this->brand = Brand::where('name', $brandName)->first()
+            ?? $this->fail("Brand '{$brandName}' not found.");
 
         $this->crmBrand = class_exists(CrmBrand::class)
             ? CrmBrand::where('brand', $this->brand->name)->first()
             : null;
+
+        if ($this->crmBrand === null) {
+            $this->fail("No CRM brand found for brand '{$this->brand->name}'.");
+        }
 
         $this->filters['brand_id'] = $this->brand->id;
         $this->filters['crm_brand_id'] = $this->crmBrand?->id;
