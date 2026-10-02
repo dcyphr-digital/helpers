@@ -49,19 +49,25 @@ class ConstraintValidator
     /**
      * @param  list<string>  $matchKeys  columns that identify the same record (an existing row with
      *                                   the same match key values is the record being updated, not a conflict)
+     * @param  list<array>|null  $storedRecords  stored rows matching the items' match keys, when the caller has
+     *                                           already loaded them; null to load them with findExistingRows
      * @return array{valid: list<array>, rejected: list<array{item: array, reasons: list<string>}>}
      */
-    public function validate(array $items, array $matchKeys = []): array
+    public function validate(array $items, array $matchKeys = [], ?array $storedRecords = null): array
     {
         $this->rejected = [];
 
         $items = array_map(fn (array $item) => $this->emptyStringsToNull($item), $items);
         $items = array_filter($items, fn (array $item) => $this->keepOrReject($item, $this->columnViolations($item)));
 
-        $updatePositions = $this->findUpdatePositions($items, $matchKeys);
+        $updatePositions = $this->findUpdatePositions($items, $matchKeys, $storedRecords);
 
         foreach ($this->table->uniqueIndexes as $columns) {
-            $items = $this->rejectConflictsWithExistingRows($items, $columns, $matchKeys);
+            // A stored row found through the match keys is always the item's own record, never a conflict
+            if (! $this->isMatchKeyIndex($columns, $matchKeys)) {
+                $items = $this->rejectConflictsWithExistingRows($items, $columns, $matchKeys);
+            }
+
             $items = $this->rejectDuplicatesWithinItems($items, $columns, $updatePositions);
         }
 
@@ -165,6 +171,18 @@ class ConstraintValidator
         return mb_strlen((string) $value) > $maxLength
             ? "{$column} is longer than {$maxLength} characters"
             : null;
+    }
+
+    /**
+     * @param  list<string>  $columns
+     * @param  list<string>  $matchKeys
+     */
+    private function isMatchKeyIndex(array $columns, array $matchKeys): bool
+    {
+        sort($columns);
+        sort($matchKeys);
+
+        return ! empty($matchKeys) && $columns === $matchKeys;
     }
 
     /**
@@ -274,24 +292,25 @@ class ConstraintValidator
      * i.e. the items that will be updated rather than created.
      *
      * @param  list<string>  $matchKeys
+     * @param  list<array>|null  $storedRecords
      * @return array<int|string, true>
      */
-    private function findUpdatePositions(array $items, array $matchKeys): array
+    private function findUpdatePositions(array $items, array $matchKeys, ?array $storedRecords): array
     {
         if (empty($matchKeys)) {
             return [];
         }
 
-        $tuples = array_values(array_filter(
-            array_map(fn (array $item) => $this->uniqueTuple($item, $matchKeys), $items)
-        ));
+        if ($storedRecords === null) {
+            $tuples = array_values(array_filter(
+                array_map(fn (array $item) => $this->uniqueTuple($item, $matchKeys), $items)
+            ));
 
-        if (empty($tuples)) {
-            return [];
+            $storedRecords = empty($tuples) ? [] : ($this->findExistingRows)($matchKeys, $tuples);
         }
 
         $storedKeys = [];
-        foreach (($this->findExistingRows)($matchKeys, $tuples) as $row) {
+        foreach ($storedRecords as $row) {
             $storedKeys[$this->tupleKey($row, $matchKeys)] = true;
         }
 

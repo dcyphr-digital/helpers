@@ -2,6 +2,7 @@
 
 namespace DcyphrDigital\Helpers\Services\Database;
 
+use DcyphrDigital\Helpers\Services\Database\Constraints\TableConstraints;
 use Exception;
 use Illuminate\Support\Str;
 
@@ -98,13 +99,9 @@ trait HelperService
             return;
         }
 
-        $tableName = $this->model->getTable();
-        $connection = $this->model->getConnection();
-        $databaseName = $connection->getDatabaseName();
-
         $primaryKey = $this->model->getKeyName();
 
-        $uniqueConstraints = $this->getUniqueConstraints($connection, $databaseName, $tableName);
+        $uniqueConstraints = TableConstraints::uniqueIndexesFor($this->model);
 
         foreach ($matchKeys as $matchKey) {
             if (! $this->isValidMatchKey($matchKey, $primaryKey, $uniqueConstraints)) {
@@ -123,27 +120,6 @@ trait HelperService
                 );
             }
         }
-    }
-
-    private function getUniqueConstraints($connection, string $databaseName, string $tableName): array
-    {
-        $constraints = $connection->select('
-            SELECT
-                INDEX_NAME,
-                GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) as COLUMNS
-            FROM INFORMATION_SCHEMA.STATISTICS
-            WHERE TABLE_SCHEMA = ?
-            AND TABLE_NAME = ?
-            AND NON_UNIQUE = 0
-            GROUP BY INDEX_NAME
-        ', [$databaseName, $tableName]);
-
-        $uniqueConstraints = [];
-        foreach ($constraints as $constraint) {
-            $uniqueConstraints[] = explode(',', $constraint->COLUMNS);
-        }
-
-        return $uniqueConstraints;
     }
 
     private function isUniqueCombination(array $matchKeys, array $uniqueConstraints, string $primaryKey): bool

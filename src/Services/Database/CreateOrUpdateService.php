@@ -82,16 +82,12 @@ class CreateOrUpdateService
         $this->rejected = [];
 
         try {
-            // Validate matchKeys before proceeding
-            $this->validateMatchKeys(matchKeys: $matchKeys);
-
-            if ($validateConstraints) {
-                $this->removeItemsBreakingConstraints(matchKeys: $matchKeys);
-            }
-
             if (empty($this->items)) {
                 return true;
             }
+
+            // Validate matchKeys before proceeding
+            $this->validateMatchKeys(matchKeys: $matchKeys);
 
             // Find existing records using combinations of match keys
             $this->existingRecords = $this->findExistingRecordsByMatchKeys(
@@ -99,6 +95,14 @@ class CreateOrUpdateService
                 matchKeys: $matchKeys,
                 additionalSelectColumns: $additionalSelectColumns
             );
+
+            if ($validateConstraints) {
+                $this->removeItemsBreakingConstraints(matchKeys: $matchKeys);
+
+                if (empty($this->items)) {
+                    return true;
+                }
+            }
 
             // Perform bulk create and update operations
             $this->performBulkCreateOrUpdate(
@@ -135,7 +139,11 @@ class CreateOrUpdateService
             findExistingRows: fn (array $columns, array $tuples) => $this->findRowsMatchingTuples($columns, $tuples, $matchKeys),
         );
 
-        $result = $validator->validate(items: $this->items, matchKeys: $matchKeys);
+        $result = $validator->validate(
+            items: $this->items,
+            matchKeys: $matchKeys,
+            storedRecords: $this->existingRecords,
+        );
 
         $this->items = $result['valid'];
         $this->rejected = $result['rejected'];
