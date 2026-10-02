@@ -65,6 +65,8 @@ class CreateOrUpdateService
      * @param  list<string>  $additionalSelectColumns  Optional DB columns to include when loading existing rows (beyond primary key + match keys).
      * @param  bool  $validateConstraints  Remove (and log) items that break the table's NOT NULL, enum, integer,
      *                                     length or unique constraints instead of letting the whole batch fail.
+     *                                     Items that update a stored record are only checked on the columns the
+     *                                     update writes (reliable + match keys), unless rules may write others.
      */
     public function handle(
         array $reliableKeys,
@@ -97,7 +99,11 @@ class CreateOrUpdateService
             );
 
             if ($validateConstraints) {
-                $this->removeItemsBreakingConstraints(matchKeys: $matchKeys);
+                // A rule (e.g. IfNullThenUpdate) can write any column, so only narrow the checks without rules
+                $this->removeItemsBreakingConstraints(
+                    matchKeys: $matchKeys,
+                    updateColumns: empty($rules) ? $reliableKeys : null,
+                );
 
                 if (empty($this->items)) {
                     return true;
@@ -132,7 +138,10 @@ class CreateOrUpdateService
         }
     }
 
-    private function removeItemsBreakingConstraints(array $matchKeys): void
+    /**
+     * @param  list<string>|null  $updateColumns  columns an update writes; null when it may write any column
+     */
+    private function removeItemsBreakingConstraints(array $matchKeys, ?array $updateColumns): void
     {
         $validator = new ConstraintValidator(
             table: TableConstraints::fromModel($this->model),
@@ -143,6 +152,7 @@ class CreateOrUpdateService
             items: $this->items,
             matchKeys: $matchKeys,
             storedRecords: $this->existingRecords,
+            updateColumns: $updateColumns,
         );
 
         $this->items = $result['valid'];

@@ -321,4 +321,113 @@ class ConstraintValidatorTest extends TestCase
         $this->assertSame([], $result['valid']);
         $this->assertCount(1, $result['rejected']);
     }
+
+    /**
+     * Columns written when SynchroniseMembers updates a stored member (no website_id).
+     */
+    private const UPDATE_COLUMNS = ['email', 'first_name', 'gender'];
+
+    public function test_an_update_is_not_rejected_for_a_column_it_does_not_write(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 5, 'website_id' => 77, 'email' => 'me@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 5, 'website_id' => 'not-a-number', 'email' => 'new@test.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([5], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([], $result['rejected']);
+    }
+
+    public function test_updates_sharing_a_value_they_do_not_write_are_all_kept(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 1, 'website_id' => 1, 'email' => 'a@test.com'],
+            ['brand_id' => 1, 'crm_id' => 2, 'website_id' => 2, 'email' => 'b@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 42, 'email' => 'a@test.com']),
+            $this->member(['crm_id' => 2, 'website_id' => 42, 'email' => 'b@test.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([1, 2], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([], $result['rejected']);
+    }
+
+    public function test_an_update_may_carry_a_value_stored_on_another_record_when_it_does_not_write_it(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 5, 'website_id' => 5, 'email' => 'me@test.com'],
+            ['brand_id' => 1, 'crm_id' => 6, 'website_id' => 77, 'email' => 'other@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 5, 'website_id' => 77, 'email' => 'me@test.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([5], array_column($result['valid'], 'crm_id'));
+    }
+
+    public function test_an_update_is_still_rejected_for_a_column_it_writes(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 5, 'website_id' => 5, 'email' => 'me@test.com'],
+            ['brand_id' => 1, 'crm_id' => 6, 'website_id' => 6, 'email' => 'taken@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 5, 'website_id' => 5, 'email' => 'taken@test.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([], $result['valid']);
+        $this->assertSame(
+            ["brand_id '1', email 'taken@test.com' already exists in members"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_updates_sharing_a_value_they_write_keep_only_the_newest(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 1, 'website_id' => 1, 'email' => 'a@test.com'],
+            ['brand_id' => 1, 'crm_id' => 2, 'website_id' => 2, 'email' => 'b@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 1, 'email' => 'shared@test.com']),
+            $this->member(['crm_id' => 2, 'website_id' => 2, 'email' => 'SHARED@test.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([2], array_column($result['valid'], 'crm_id'));
+        $this->assertSame(1, $result['rejected'][0]['item']['crm_id']);
+        $this->assertSame(
+            ["brand_id '1', email 'shared@test.com' is duplicated by a newer item in this batch"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_a_create_is_still_checked_on_every_column(): void
+    {
+        $result = $this->validator()->validate([
+            $this->member(['crm_id' => 5, 'website_id' => 'not-a-number']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([], $result['valid']);
+        $this->assertCount(1, $result['rejected']);
+    }
+
+    public function test_the_rejected_update_keeps_every_column(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 5, 'website_id' => 5, 'email' => 'me@test.com'],
+        ]);
+        $item = $this->member(['crm_id' => 5, 'website_id' => 'not-a-number', 'gender' => 'Unknown']);
+
+        $result = $validator->validate([$item], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame($item, $result['rejected'][0]['item']);
+    }
 }

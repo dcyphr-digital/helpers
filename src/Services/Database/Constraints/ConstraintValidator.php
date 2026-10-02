@@ -21,6 +21,9 @@ use Illuminate\Support\Str;
  *     - items that update a stored record keep only the newest (by created_at, then
  *       updated_at, then id when the table has them, otherwise the last item in the batch)
  *
+ * Items that update a stored record are only checked on the columns the update writes,
+ * when the caller says which those are (see validate's $updateColumns).
+ *
  * String values are compared case-insensitively, like the default MySQL collations.
  */
 class ConstraintValidator
@@ -37,6 +40,12 @@ class ConstraintValidator
     /** @var list<array{item: array, reasons: list<string>}> */
     private array $rejected = [];
 
+    /** @var array<int|string, true> positions of the items that update a stored record */
+    private array $updatePositions = [];
+
+    /** @var list<string>|null columns an update writes; null when it may write any column */
+    private ?array $updateColumns = null;
+
     /**
      * @param  Closure(list<string> $columns, list<array> $tuples): list<array>  $findExistingRows
      *                                                                           Returns stored rows whose `$columns` values match any of `$tuples`.
@@ -51,16 +60,23 @@ class ConstraintValidator
      *                                   the same match key values is the record being updated, not a conflict)
      * @param  list<array>|null  $storedRecords  stored rows matching the items' match keys, when the caller has
      *                                           already loaded them; null to load them with findExistingRows
+     * @param  list<string>|null  $updateColumns  columns written when an item updates a stored record (match keys
+     *                                            are always included); null when an update may write any column
      * @return array{valid: list<array>, rejected: list<array{item: array, reasons: list<string>}>}
      */
-    public function validate(array $items, array $matchKeys = [], ?array $storedRecords = null): array
+    public function validate(array $items, array $matchKeys = [], ?array $storedRecords = null, ?array $updateColumns = null): array
     {
         $this->rejected = [];
+        $this->updateColumns = $updateColumns === null ? null : array_values(array_unique([...$updateColumns, ...$matchKeys]));
 
         $items = array_map(fn (array $item) => $this->emptyStringsToNull($item), $items);
-        $items = array_filter($items, fn (array $item) => $this->keepOrReject($item, $this->columnViolations($item)));
+        $this->updatePositions = $this->findUpdatePositions($items, $matchKeys, $storedRecords);
 
-        $updatePositions = $this->findUpdatePositions($items, $matchKeys, $storedRecords);
+        $items = array_filter(
+            $items,
+            fn (array $item, int|string $position) => $this->keepOrReject($item, $this->columnViolations($item, $position)),
+            ARRAY_FILTER_USE_BOTH,
+        );
 
         foreach ($this->table->uniqueIndexes as $columns) {
             // A stored row found through the match keys is always the item's own record, never a conflict
@@ -68,7 +84,7 @@ class ConstraintValidator
                 $items = $this->rejectConflictsWithExistingRows($items, $columns, $matchKeys);
             }
 
-            $items = $this->rejectDuplicatesWithinItems($items, $columns, $updatePositions);
+            $items = $this->rejectDuplicatesWithinItems($items, $columns);
         }
 
         return [
@@ -98,13 +114,13 @@ class ConstraintValidator
     /**
      * @return list<string>
      */
-    private function columnViolations(array $item): array
+    private function columnViolations(array $item, int|string $position): array
     {
         $reasons = [];
 
         foreach ($item as $column => $value) {
             $definition = $this->table->columns[$column] ?? null;
-            if ($definition === null) {
+            if ($definition === null || ! $this->writes($position, $column)) {
                 continue;
             }
 
@@ -193,9 +209,13 @@ class ConstraintValidator
      */
     private function rejectConflictsWithExistingRows(array $items, array $columns, array $matchKeys): array
     {
-        $tuples = array_values(array_filter(
-            array_map(fn (array $item) => $this->uniqueTuple($item, $columns), $items)
-        ));
+        $tuples = [];
+        foreach ($items as $position => $item) {
+            $tuple = $this->writesAll($position, $columns) ? $this->uniqueTuple($item, $columns) : null;
+            if ($tuple !== null) {
+                $tuples[] = $tuple;
+            }
+        }
 
         if (empty($tuples)) {
             return $items;
@@ -206,7 +226,11 @@ class ConstraintValidator
             $existingRowsByKey[$this->tupleKey($row, $columns)] = $row;
         }
 
-        return array_filter($items, function (array $item) use ($columns, $matchKeys, $existingRowsByKey) {
+        return array_filter($items, function (array $item, int|string $position) use ($columns, $matchKeys, $existingRowsByKey) {
+            if (! $this->writesAll($position, $columns)) {
+                return true;
+            }
+
             $tuple = $this->uniqueTuple($item, $columns);
             $existingRow = $tuple ? ($existingRowsByKey[$this->tupleKey($tuple, $columns)] ?? null) : null;
 
@@ -217,7 +241,7 @@ class ConstraintValidator
             return $this->keepOrReject($item, [
                 $this->describe($tuple).' already exists in '.$this->table->table,
             ]);
-        });
+        }, ARRAY_FILTER_USE_BOTH);
     }
 
     /**
@@ -227,13 +251,12 @@ class ConstraintValidator
      *    (see isNewerThan for how "newest" is decided).
      *
      * @param  list<string>  $columns
-     * @param  array<int|string, true>  $updatePositions  positions of items that update an existing record
      */
-    private function rejectDuplicatesWithinItems(array $items, array $columns, array $updatePositions): array
+    private function rejectDuplicatesWithinItems(array $items, array $columns): array
     {
         $positionsByKey = [];
         foreach ($items as $position => $item) {
-            $tuple = $this->uniqueTuple($item, $columns);
+            $tuple = $this->writesAll($position, $columns) ? $this->uniqueTuple($item, $columns) : null;
             if ($tuple !== null) {
                 $positionsByKey[$this->tupleKey($tuple, $columns)][] = $position;
             }
@@ -245,7 +268,7 @@ class ConstraintValidator
                 continue;
             }
 
-            $updates = array_values(array_filter($positions, fn ($position) => isset($updatePositions[$position])));
+            $updates = array_values(array_filter($positions, fn ($position) => isset($this->updatePositions[$position])));
             $creates = array_diff($positions, $updates);
 
             foreach ($creates as $position) {
@@ -382,6 +405,33 @@ class ConstraintValidator
         }
 
         return $tuple;
+    }
+
+    /**
+     * Items that will be created write every column; items that update a stored record
+     * only write the update columns (or every column when those are not known).
+     */
+    private function writes(int|string $position, string $column): bool
+    {
+        return ! isset($this->updatePositions[$position])
+            || $this->updateColumns === null
+            || in_array($column, $this->updateColumns, true);
+    }
+
+    /**
+     * Whether the item writes every column of a unique index; an index it leaves untouched cannot be broken by it.
+     *
+     * @param  list<string>  $columns
+     */
+    private function writesAll(int|string $position, array $columns): bool
+    {
+        foreach ($columns as $column) {
+            if (! $this->writes($position, $column)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
