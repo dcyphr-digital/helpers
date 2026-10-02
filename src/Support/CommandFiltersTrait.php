@@ -116,6 +116,15 @@ trait CommandFiltersTrait
         return $this->parseCommaSeparatedList($raw);
     }
 
+    /**
+     * Whether the command must find a CRM brand matching its brand. Without one, crm_brand_id is null
+     * and CRM queries filtered by it would cover every brand, so commands reading CRM data override this.
+     */
+    protected function requiresCrmBrand(): bool
+    {
+        return true;
+    }
+
     private function setupBrands(): void
     {
         $brandName = $this->argument('brand_name');
@@ -127,7 +136,7 @@ trait CommandFiltersTrait
             ? CrmBrand::where('brand', $this->brand->name)->first()
             : null;
 
-        if ($this->crmBrand === null) {
+        if ($this->crmBrand === null && $this->requiresCrmBrand()) {
             $this->fail("No CRM brand found for brand '{$this->brand->name}'.");
         }
 
