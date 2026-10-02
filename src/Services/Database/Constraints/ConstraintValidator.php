@@ -24,6 +24,9 @@ use Illuminate\Support\Str;
  * Items that update a stored record are only checked on the columns the update writes,
  * when the caller says which those are (see validate's $updateColumns).
  *
+ * Rejection reasons never contain the item's values, as they may be personal data; a unique
+ * clash names the other record by its match keys instead.
+ *
  * String values are compared case-insensitively, like the default MySQL collations.
  */
 class ConstraintValidator
@@ -46,6 +49,9 @@ class ConstraintValidator
     /** @var list<string>|null columns an update writes; null when it may write any column */
     private ?array $updateColumns = null;
 
+    /** @var list<string> */
+    private array $matchKeys = [];
+
     /**
      * @param  Closure(list<string> $columns, list<array> $tuples): list<array>  $findExistingRows
      *                                                                           Returns stored rows whose `$columns` values match any of `$tuples`.
@@ -67,6 +73,7 @@ class ConstraintValidator
     public function validate(array $items, array $matchKeys = [], ?array $storedRecords = null, ?array $updateColumns = null): array
     {
         $this->rejected = [];
+        $this->matchKeys = $matchKeys;
         $this->updateColumns = $updateColumns === null ? null : array_values(array_unique([...$updateColumns, ...$matchKeys]));
 
         $items = array_map(fn (array $item) => $this->emptyStringsToNull($item), $items);
@@ -155,7 +162,7 @@ class ConstraintValidator
 
         $isAllowed = in_array(Str::lower((string) $value), array_map([Str::class, 'lower'], $allowed), true);
 
-        return $isAllowed ? null : "{$column} '{$value}' must be one of: ".implode(', ', $allowed);
+        return $isAllowed ? null : "{$column} must be one of: ".implode(', ', $allowed);
     }
 
     private function integerViolation(string $column, mixed $value, string $type): ?string
@@ -165,11 +172,11 @@ class ConstraintValidator
         }
 
         if (! is_int($value) && ! (is_string($value) && preg_match('/^-?\d+$/', $value))) {
-            return "{$column} '{$value}' must be an integer";
+            return "{$column} must be an integer";
         }
 
         if (str_contains(strtolower($type), 'unsigned') && (int) $value < 0) {
-            return "{$column} '{$value}' cannot be negative";
+            return "{$column} cannot be negative";
         }
 
         return null;
@@ -239,7 +246,7 @@ class ConstraintValidator
             }
 
             return $this->keepOrReject($item, [
-                $this->describe($tuple).' already exists in '.$this->table->table,
+                $this->describe($columns).' already exists in '.$this->table->table.$this->identify([$existingRow]),
             ]);
         }, ARRAY_FILTER_USE_BOTH);
     }
@@ -272,13 +279,14 @@ class ConstraintValidator
             $creates = array_diff($positions, $updates);
 
             foreach ($creates as $position) {
-                $rejectReasonByPosition[$position] = 'is used by more than one item in this batch';
+                $others = array_map(fn ($other) => $items[$other], array_diff($positions, [$position]));
+                $rejectReasonByPosition[$position] = 'is used by more than one item in this batch'.$this->identify($others, 'also ');
             }
 
             $newestUpdate = $this->newestPosition($items, $updates);
             foreach ($updates as $position) {
                 if ($position !== $newestUpdate) {
-                    $rejectReasonByPosition[$position] = 'is duplicated by a newer item in this batch';
+                    $rejectReasonByPosition[$position] = 'is duplicated by a newer item in this batch'.$this->identify([$items[$newestUpdate]]);
                 }
             }
         }
@@ -289,7 +297,7 @@ class ConstraintValidator
             }
 
             return $this->keepOrReject($item, [
-                $this->describe($this->uniqueTuple($item, $columns)).' '.$rejectReasonByPosition[$position],
+                $this->describe($columns).' '.$rejectReasonByPosition[$position],
             ]);
         }, ARRAY_FILTER_USE_BOTH);
     }
@@ -470,13 +478,32 @@ class ConstraintValidator
         return Str::lower(trim((string) $value));
     }
 
-    private function describe(array $tuple): string
+    /**
+     * @param  list<string>  $columns
+     */
+    private function describe(array $columns): string
     {
-        return implode(', ', array_map(
-            fn (string $column, mixed $value) => "{$column} '{$value}'",
-            array_keys($tuple),
-            $tuple,
-        ));
+        return '('.implode(', ', $columns).')';
+    }
+
+    /**
+     * The match keys of the other records involved, e.g. " (brand_id '1', crm_id '2')",
+     * so they can be found without logging their values; empty without match keys.
+     *
+     * @param  list<array>  $records
+     */
+    private function identify(array $records, string $prefix = ''): string
+    {
+        if (empty($this->matchKeys)) {
+            return '';
+        }
+
+        $identities = array_map(fn (array $record) => implode(', ', array_map(
+            fn (string $key) => "{$key} '".($record[$key] ?? 'null')."'",
+            $this->matchKeys,
+        )), $records);
+
+        return ' ('.$prefix.implode('; ', $identities).')';
     }
 
     /**

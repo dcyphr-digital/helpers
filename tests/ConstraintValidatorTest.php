@@ -92,7 +92,7 @@ class ConstraintValidatorTest extends TestCase
 
         $this->assertCount(1, $result['valid']);
         $this->assertSame(
-            ["gender 'Unknown' must be one of: Male, Female, Not Provided"],
+            ["gender must be one of: Male, Female, Not Provided"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -106,8 +106,8 @@ class ConstraintValidatorTest extends TestCase
         ]);
 
         $this->assertSame([3], array_column($result['valid'], 'crm_id'));
-        $this->assertSame(["website_id 'abc' must be an integer"], $result['rejected'][0]['reasons']);
-        $this->assertSame(["website_id '-5' cannot be negative"], $result['rejected'][1]['reasons']);
+        $this->assertSame(["website_id must be an integer"], $result['rejected'][0]['reasons']);
+        $this->assertSame(["website_id cannot be negative"], $result['rejected'][1]['reasons']);
     }
 
     public function test_an_empty_string_in_a_nullable_integer_column_becomes_null(): void
@@ -125,7 +125,7 @@ class ConstraintValidatorTest extends TestCase
     {
         $result = $this->validator()->validate([$this->member(['brand_id' => ''])]);
 
-        $this->assertSame(["brand_id '' must be an integer"], $result['rejected'][0]['reasons']);
+        $this->assertSame(["brand_id must be an integer"], $result['rejected'][0]['reasons']);
     }
 
     public function test_rejects_strings_longer_than_the_column(): void
@@ -146,7 +146,7 @@ class ConstraintValidatorTest extends TestCase
         $this->assertSame([3], array_column($result['valid'], 'crm_id'));
         $this->assertSame([1, 2], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
         $this->assertSame(
-            ["brand_id '1', website_id '42' is used by more than one item in this batch"],
+            ["(brand_id, website_id) is used by more than one item in this batch (also brand_id '1', crm_id '2')"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -175,7 +175,7 @@ class ConstraintValidatorTest extends TestCase
 
         $this->assertSame([1], array_column($result['valid'], 'crm_id'));
         $this->assertSame(
-            ["brand_id '1', website_id '42' is used by more than one item in this batch"],
+            ["(brand_id, website_id) is used by more than one item in this batch (also brand_id '1', crm_id '1')"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -202,7 +202,7 @@ class ConstraintValidatorTest extends TestCase
 
         $this->assertSame([2], array_column($result['valid'], 'crm_id'));
         $this->assertSame(
-            ["brand_id '1', website_id '42' is duplicated by a newer item in this batch"],
+            ["(brand_id, website_id) is duplicated by a newer item in this batch (brand_id '1', crm_id '2')"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -263,7 +263,7 @@ class ConstraintValidatorTest extends TestCase
 
         $this->assertSame([], $result['valid']);
         $this->assertSame(
-            ["brand_id '1', website_id '77' already exists in members"],
+            ["(brand_id, website_id) already exists in members (brand_id '1', crm_id '99')"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -384,7 +384,7 @@ class ConstraintValidatorTest extends TestCase
 
         $this->assertSame([], $result['valid']);
         $this->assertSame(
-            ["brand_id '1', email 'taken@test.com' already exists in members"],
+            ["(brand_id, email) already exists in members (brand_id '1', crm_id '6')"],
             $result['rejected'][0]['reasons'],
         );
     }
@@ -404,9 +404,66 @@ class ConstraintValidatorTest extends TestCase
         $this->assertSame([2], array_column($result['valid'], 'crm_id'));
         $this->assertSame(1, $result['rejected'][0]['item']['crm_id']);
         $this->assertSame(
-            ["brand_id '1', email 'shared@test.com' is duplicated by a newer item in this batch"],
+            ["(brand_id, email) is duplicated by a newer item in this batch (brand_id '1', crm_id '2')"],
             $result['rejected'][0]['reasons'],
         );
+    }
+
+    public function test_an_update_keeping_its_email_wins_over_a_create_with_the_same_email(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 1, 'website_id' => 1, 'email' => 'taken@gmail.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 1, 'email' => 'taken@gmail.com', 'first_name' => 'Updated']),
+            $this->member(['crm_id' => 2, 'website_id' => 2, 'email' => 'TAKEN@gmail.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([1], array_column($result['valid'], 'crm_id'));
+        $this->assertSame(2, $result['rejected'][0]['item']['crm_id']);
+        $this->assertSame(
+            ["(brand_id, email) already exists in members (brand_id '1', crm_id '1')"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_an_update_changing_to_an_email_wins_over_a_create_with_the_same_email(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 1, 'website_id' => 1, 'email' => 'old@gmail.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 2, 'website_id' => 2, 'email' => 'taken@gmail.com']),
+            $this->member(['crm_id' => 1, 'website_id' => 1, 'email' => 'taken@gmail.com']),
+        ], ['brand_id', 'crm_id'], updateColumns: self::UPDATE_COLUMNS);
+
+        $this->assertSame([1], array_column($result['valid'], 'crm_id'));
+        $this->assertSame(2, $result['rejected'][0]['item']['crm_id']);
+        $this->assertSame(
+            ["(brand_id, email) is used by more than one item in this batch (also brand_id '1', crm_id '1')"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_reasons_never_contain_the_item_values(): void
+    {
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 9, 'website_id' => 9, 'email' => 'private@gmail.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 'secret-id', 'email' => 'private@gmail.com', 'gender' => 'Secret']),
+            $this->member(['crm_id' => 2, 'website_id' => 2, 'email' => 'private@gmail.com']),
+        ], ['brand_id', 'crm_id']);
+
+        $reasons = implode(' ', array_merge(...array_column($result['rejected'], 'reasons')));
+
+        $this->assertCount(2, $result['rejected']);
+        $this->assertStringNotContainsString('private@gmail.com', $reasons);
+        $this->assertStringNotContainsString('secret-id', $reasons);
+        $this->assertStringNotContainsString('Secret', $reasons);
     }
 
     public function test_a_create_is_still_checked_on_every_column(): void

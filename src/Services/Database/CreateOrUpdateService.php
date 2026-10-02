@@ -7,6 +7,7 @@ use DcyphrDigital\Helpers\Services\Database\Constraints\TableConstraints;
 use DcyphrDigital\Helpers\Support\LogHandling;
 use Exception;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 
 class CreateOrUpdateService
@@ -53,6 +54,7 @@ class CreateOrUpdateService
 
     /**
      * Items removed by `validateConstraints`, each with the reasons it was rejected.
+     * Only their match keys are logged; the full items are returned here.
      *
      * @return list<array{item: array, reasons: list<string>}>
      */
@@ -161,7 +163,11 @@ class CreateOrUpdateService
         if (! empty($this->rejected)) {
             Log::warning('Skipped '.count($this->rejected).' item(s) that break '.$this->model->getTable().' constraints', [
                 'model' => $this->model::class,
-                'rejected' => $this->rejected,
+                // Only the match keys, as the other values may be personal data
+                'rejected' => array_map(fn (array $rejection) => [
+                    'match' => Arr::only($rejection['item'], $matchKeys),
+                    'reasons' => $rejection['reasons'],
+                ], $this->rejected),
             ]);
         }
     }
