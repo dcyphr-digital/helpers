@@ -100,7 +100,7 @@ class CreateOrUpdateService
             $this->existingRecords = $this->findExistingRecordsByMatchKeys(
                 items: $this->items,
                 matchKeys: $matchKeys,
-                additionalSelectColumns: $additionalSelectColumns
+                additionalSelectColumns: $this->selectColumnsForRules($additionalSelectColumns, $rules)
             );
 
             if ($validateConstraints) {
@@ -145,6 +145,24 @@ class CreateOrUpdateService
 
             return false;
         }
+    }
+
+    /**
+     * Rules decide from the stored values (e.g. IfNullThenUpdate only writes a column that is empty), so with
+     * rules every column the items carry is loaded too; otherwise unloaded columns would all look empty.
+     *
+     * @param  list<string>  $additionalSelectColumns
+     * @return list<string>
+     */
+    private function selectColumnsForRules(array $additionalSelectColumns, ?array $rules): array
+    {
+        if (empty($rules)) {
+            return $additionalSelectColumns;
+        }
+
+        $itemColumns = collect($this->items)->flatMap(fn (array $item) => array_keys($item))->all();
+
+        return array_values(array_unique([...$additionalSelectColumns, ...$itemColumns]));
     }
 
     /**

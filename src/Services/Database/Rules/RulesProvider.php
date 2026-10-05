@@ -2,8 +2,6 @@
 
 namespace DcyphrDigital\Helpers\Services\Database\Rules;
 
-use function DcyphrDigital\Helpers\Services\Rules\resolve;
-
 class RulesProvider
 {
     public const string IF_NULL_THEN_UPDATE = 'if_null_then_update';
