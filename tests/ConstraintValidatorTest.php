@@ -499,6 +499,40 @@ class ConstraintValidatorTest extends TestCase
         $this->assertSame([2, 3], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
     }
 
+    public function test_with_first_create_wins_an_item_losing_on_a_later_index_does_not_take_a_value_on_an_earlier_one(): void
+    {
+        // crm 2 shares the email with crm 3 and the website_id with crm 1. Checked one index at a time, crm 2 beat
+        // crm 3 on the email, then lost to crm 1 on the website_id, so neither was kept
+        $result = $this->validator()->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 42, 'email' => 'one@test.com']),
+            $this->member(['crm_id' => 2, 'website_id' => 42, 'email' => 'shared@test.com']),
+            $this->member(['crm_id' => 3, 'website_id' => 43, 'email' => 'shared@test.com']),
+        ], ['brand_id', 'crm_id'], firstCreateWins: true);
+
+        $this->assertSame([1, 3], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([2], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
+        $this->assertSame(
+            ["(brand_id, website_id) is already used by an earlier item in this batch (brand_id '1', crm_id '1')"],
+            $result['rejected'][0]['reasons'],
+        );
+    }
+
+    public function test_with_first_create_wins_an_item_clashing_with_a_stored_row_does_not_take_a_value(): void
+    {
+        // crm 1's website_id is stored on another member, so crm 1 is not written and crm 2 keeps the email
+        $validator = $this->validator([
+            ['brand_id' => 1, 'crm_id' => 9, 'website_id' => 42, 'email' => 'stored@test.com'],
+        ]);
+
+        $result = $validator->validate([
+            $this->member(['crm_id' => 1, 'website_id' => 42, 'email' => 'shared@test.com']),
+            $this->member(['crm_id' => 2, 'website_id' => 43, 'email' => 'shared@test.com']),
+        ], ['brand_id', 'crm_id'], firstCreateWins: true);
+
+        $this->assertSame([2], array_column($result['valid'], 'crm_id'));
+        $this->assertSame([1], array_map(fn ($rejection) => $rejection['item']['crm_id'], $result['rejected']));
+    }
+
     public function test_a_create_is_still_checked_on_every_column(): void
     {
         $result = $this->validator()->validate([

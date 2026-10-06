@@ -18,7 +18,8 @@ use Illuminate\Support\Str;
  *  2. unique indexes against rows already in the table (the stored row wins)
  *  3. unique indexes within the items themselves:
  *     - items that would be created are all rejected when they share a value, or with
- *       $firstCreateWins only the first of them is kept, when no update claims the value;
+ *       $firstCreateWins only the first of them is kept, when no update claims the value
+ *       (decided over every index at once, see keepFirstCreates);
  *     - items that update a stored record keep only the newest (by created_at, then
  *       updated_at, then id when the table has them, otherwise the last item in the batch)
  *
@@ -96,13 +97,21 @@ class ConstraintValidator
             ARRAY_FILTER_USE_BOTH,
         );
 
+        // Every index is checked against the stored rows first, so an item that cannot be written is gone before
+        // it can win a value from another item
         foreach ($this->table->uniqueIndexes as $columns) {
             // A stored row found through the match keys is always the item's own record, never a conflict
             if (! $this->isMatchKeyIndex($columns, $matchKeys)) {
                 $items = $this->rejectConflictsWithExistingRows($items, $columns, $matchKeys);
             }
+        }
 
+        foreach ($this->table->uniqueIndexes as $columns) {
             $items = $this->rejectDuplicatesWithinItems($items, $columns);
+        }
+
+        if ($firstCreateWins) {
+            $items = $this->keepFirstCreates($items);
         }
 
         return [
@@ -264,8 +273,8 @@ class ConstraintValidator
 
     /**
      * When several items share the same unique values:
-     *  - every item that would be created is rejected (none of them can be trusted), or with
-     *    firstCreateWins and no update sharing the value, all but the first in the batch;
+     *  - every item that would be created is rejected (none of them can be trusted); with
+     *    firstCreateWins they are left to keepFirstCreates instead;
      *  - of the items that update an existing record, only the newest is kept
      *    (see isNewerThan for how "newest" is decided).
      *
@@ -288,20 +297,9 @@ class ConstraintValidator
             }
 
             $updates = array_values(array_filter($positions, fn ($position) => isset($this->updatePositions[$position])));
-            $creates = array_diff($positions, $updates);
-
-            // An update claiming the value always wins, as a stored record does across batches
-            $keptCreate = $this->firstCreateWins && empty($updates) ? array_values($creates)[0] : null;
+            $creates = $this->firstCreateWins ? [] : array_diff($positions, $updates);
 
             foreach ($creates as $position) {
-                if ($keptCreate !== null) {
-                    if ($position !== $keptCreate) {
-                        $rejectReasonByPosition[$position] = 'is already used by an earlier item in this batch'.$this->identify([$items[$keptCreate]]);
-                    }
-
-                    continue;
-                }
-
                 $others = array_map(fn ($other) => $items[$other], array_diff($positions, [$position]));
                 $rejectReasonByPosition[$position] = 'is used by more than one item in this batch'.$this->identify($others, 'also ');
             }
@@ -322,6 +320,57 @@ class ConstraintValidator
             return $this->keepOrReject($item, [
                 $this->describe($columns).' '.$rejectReasonByPosition[$position],
             ]);
+        }, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * With firstCreateWins: an item to be created is kept only when none of its unique values is taken yet, and then
+     * takes them all. Updates take their values first, as a stored record wins across batches, then the items to be
+     * created in batch order. Deciding over every index at once means an item that loses a value on one index cannot
+     * have pushed out an item on another index first, leaving the value to nobody.
+     */
+    private function keepFirstCreates(array $items): array
+    {
+        /** @var array<int, array<string, int|string>> $takenBy position taking each value, per unique index */
+        $takenBy = [];
+        $take = function (int|string $position, array $item) use (&$takenBy) {
+            foreach ($this->table->uniqueIndexes as $index => $columns) {
+                $tuple = $this->writesAll($position, $columns) ? $this->uniqueTuple($item, $columns) : null;
+                if ($tuple !== null) {
+                    $takenBy[$index][$this->tupleKey($tuple, $columns)] ??= $position;
+                }
+            }
+        };
+
+        foreach ($items as $position => $item) {
+            if (isset($this->updatePositions[$position])) {
+                $take($position, $item);
+            }
+        }
+
+        return array_filter($items, function (array $item, int|string $position) use (&$takenBy, $take, $items) {
+            if (isset($this->updatePositions[$position])) {
+                return true;
+            }
+
+            $reasons = [];
+            foreach ($this->table->uniqueIndexes as $index => $columns) {
+                $tuple = $this->uniqueTuple($item, $columns);
+                $takenByPosition = $tuple === null ? null : ($takenBy[$index][$this->tupleKey($tuple, $columns)] ?? null);
+                if ($takenByPosition === null) {
+                    continue;
+                }
+
+                $reasons[] = $this->describe($columns).(isset($this->updatePositions[$takenByPosition])
+                    ? ' is used by more than one item in this batch'.$this->identify([$items[$takenByPosition]], 'also ')
+                    : ' is already used by an earlier item in this batch'.$this->identify([$items[$takenByPosition]]));
+            }
+
+            if (empty($reasons)) {
+                $take($position, $item);
+            }
+
+            return $this->keepOrReject($item, $reasons);
         }, ARRAY_FILTER_USE_BOTH);
     }
 
