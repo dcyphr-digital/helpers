@@ -16,60 +16,81 @@ class UpdateService
         $this->updateSqlService = resolve(UpdateSqlService::class, ['model' => $this->model]);
     }
 
+    /**
+     * Updates written in one statement at most, so a statement stays a reasonable size
+     */
+    private const int BATCH_SIZE = 500;
+
+    /**
+     * Writes the updates in batches of up to BATCH_SIZE, one UPDATE statement per batch. Each row gets its own
+     * values, its own default values and its own rule result, so batching the rows does not change what is written.
+     */
     public function handle(array $toUpdate, array $reliable, array $defaultValuesForReliableKeys, array $matchKeys, ?array $rules = []): void
     {
-        // Group updates by a hash of reliable key values
-        $groups = [];
-        foreach ($toUpdate as $item) {
-            $key = $this->generateLookupKey(item: $item['data'], matchKeys: $matchKeys);
-            $groups[$key][] = $item;
-        }
+        $toUpdate = array_map(fn (array $item) => $this->withDefaultValues(item: $item, defaultValuesForReliableKeys: $defaultValuesForReliableKeys), $toUpdate);
 
-        // Process each group
-        foreach ($groups as $group) {
-            $group = $this->overwriteWithDefaultValue(defaultValuesForReliableKeys: $defaultValuesForReliableKeys, group: $group);
+        foreach (array_chunk($toUpdate, self::BATCH_SIZE) as $group) {
             $this->bulkUpdate(group: $group, reliable: $reliable, matchKeys: $matchKeys, rules: $rules);
         }
     }
 
-    private function overwriteWithDefaultValue(array $defaultValuesForReliableKeys, array $group): array
+    /**
+     * The update writes the default value of a reliable key instead of the item's value, on every row.
+     */
+    private function withDefaultValues(array $item, array $defaultValuesForReliableKeys): array
     {
         foreach ($defaultValuesForReliableKeys as $field => $value) {
-            $group[0]['data'][$field] = $value;
+            $item['data'][$field] = $value;
         }
 
-        return $group;
+        return $item;
     }
 
     private function bulkUpdate(array $group, array $reliable, array $matchKeys, ?array $rules = []): void
     {
         // Fields to always update (reliableKeys minus matchKeys)
-        $alwaysUpdate = array_diff($reliable, $matchKeys);
+        $alwaysUpdate = array_values(array_diff($reliable, $matchKeys));
 
-        $conditionalUpdate = $this->conditionalUpdateKeys(rules: $rules, group: $group, matchKeys: $matchKeys, alwaysUpdate: $alwaysUpdate);
-        $fieldsToUpdate = array_merge($alwaysUpdate, $conditionalUpdate);
+        // A rule decides from each row's own stored values (e.g. IfNullThenUpdate only fills a column that row has
+        // empty), so it runs on each row by itself: a column empty in one row is not written to another
+        $ruleInstances = $this->ruleInstances(rules: $rules);
+        $rowConditionalUpdate = array_map(
+            fn (array $item) => $this->conditionalUpdateKeys(ruleInstances: $ruleInstances, group: [$item], matchKeys: $matchKeys, alwaysUpdate: $alwaysUpdate),
+            $group
+        );
+        $conditionalUpdate = array_values(array_unique(array_merge([], ...$rowConditionalUpdate)));
+        $fieldsToUpdate = array_values(array_unique(array_merge($alwaysUpdate, $conditionalUpdate)));
 
         $this->updateSqlService->handle(
             group: $group,
             fieldsToUpdate: $fieldsToUpdate,
             alwaysUpdate: $alwaysUpdate,
             conditionalUpdate: $conditionalUpdate,
-            matchKeys: $matchKeys
+            matchKeys: $matchKeys,
+            rowConditionalUpdate: $rowConditionalUpdate,
         );
     }
 
-    private function conditionalUpdateKeys(?array $rules, array $group, array $matchKeys, array $alwaysUpdate): array
+    private function ruleInstances(?array $rules): array
+    {
+        $ruleInstances = [];
+
+        foreach ($rules ?? [] as $rule) {
+            $ruleInstance = resolve(RulesProvider::class, ['rule' => $rule])->execute();
+
+            if (! is_null($ruleInstance)) {
+                $ruleInstances[] = $ruleInstance;
+            }
+        }
+
+        return $ruleInstances;
+    }
+
+    private function conditionalUpdateKeys(array $ruleInstances, array $group, array $matchKeys, array $alwaysUpdate): array
     {
         $conditionalUpdate = [];
 
-        foreach ($rules ?? [] as $rule) {
-            $ruleProvider = resolve(RulesProvider::class, ['rule' => $rule]);
-            $ruleInstance = $ruleProvider->execute();
-
-            if (is_null($ruleInstance)) {
-                continue;
-            }
-
+        foreach ($ruleInstances as $ruleInstance) {
             $conditionalUpdate = array_merge($conditionalUpdate, (array) $ruleInstance->handle($group, $matchKeys, $alwaysUpdate));
         }
 

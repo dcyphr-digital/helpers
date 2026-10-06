@@ -11,19 +11,25 @@ class UpdateSqlService
 {
     public function __construct(protected Model $model) {}
 
-    public function handle($group, $fieldsToUpdate, $alwaysUpdate, $conditionalUpdate, array $matchKeys): void
+    /**
+     * One UPDATE for the whole group: a CASE per field with a branch per row, for the rows matching any row of
+     * the group. $rowConditionalUpdate holds each row's own conditional fields, by the row's position in $group;
+     * without it, $conditionalUpdate applies to every row.
+     */
+    public function handle($group, $fieldsToUpdate, $alwaysUpdate, $conditionalUpdate, array $matchKeys, ?array $rowConditionalUpdate = null): void
     {
         if ($group === [] || $matchKeys === []) {
             return;
         }
 
-        $case = $this->buildCaseStatementsForGroup($group, $fieldsToUpdate, $alwaysUpdate, $conditionalUpdate, $matchKeys);
+        [$case, $rowsToUpdate] = $this->buildCaseStatementsForGroup($group, $fieldsToUpdate, $alwaysUpdate, $conditionalUpdate, $matchKeys, $rowConditionalUpdate);
 
         if (! $this->caseStatementsHaveBranches($case)) {
             return;
         }
 
-        $this->runSql($fieldsToUpdate, $case, $group, $matchKeys);
+        // Only the rows with something to write, so the others keep their updated_at
+        $this->runSql($fieldsToUpdate, $case, $rowsToUpdate, $matchKeys);
     }
 
     private function runSql(array $fieldsToUpdate, array $case, array $group, array $matchKeys): void
@@ -61,27 +67,33 @@ class UpdateSqlService
     }
 
     /**
-     * Build searched CASE branches (WHEN match_keys THEN value) per field.
+     * Build searched CASE branches (WHEN match_keys THEN value) per field, and the rows that got at least one.
+     *
+     * @return array{0: array<string, list<string>>, 1: list<array>}
      */
     private function buildCaseStatementsForGroup(
         array $group,
         array $fieldsToUpdate,
         array $alwaysUpdate,
         array $conditionalUpdate,
-        array $matchKeys
+        array $matchKeys,
+        ?array $rowConditionalUpdate = null
     ): array {
         $case = [];
+        $rowsToUpdate = [];
 
         foreach ($fieldsToUpdate as $field) {
             $case[$field] = [];
         }
 
-        foreach ($group as $item) {
+        foreach ($group as $index => $item) {
             if (! isset($item['existing']) || ! is_array($item['existing'])) {
                 throw new InvalidArgumentException('Update row is missing existing match key data.');
             }
 
             $existing = $item['existing'];
+            $itemConditionalUpdate = $rowConditionalUpdate[$index] ?? $conditionalUpdate;
+            $hasBranch = false;
 
             foreach ($fieldsToUpdate as $field) {
                 if (! array_key_exists($field, $item['data'])) {
@@ -90,15 +102,20 @@ class UpdateSqlService
 
                 $newValue = $item['data'][$field];
 
-                if (! $this->shouldUpdateField($field, $alwaysUpdate, $conditionalUpdate)) {
+                if (! $this->shouldUpdateField($field, $alwaysUpdate, $itemConditionalUpdate)) {
                     continue;
                 }
 
                 $case[$field][] = $this->caseBranchForRow($existing, $matchKeys, $newValue, $field);
+                $hasBranch = true;
+            }
+
+            if ($hasBranch) {
+                $rowsToUpdate[] = $item;
             }
         }
 
-        return $case;
+        return [$case, $rowsToUpdate];
     }
 
     private function caseBranchForRow(array $existing, array $matchKeys, mixed $newValue, ?string $field): string

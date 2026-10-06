@@ -254,7 +254,7 @@ class CreateOrUpdateServiceTest extends TestCase
         $this->assertSame('Benjamin', $ben->refresh()->first_name);
     }
 
-    public function test_runs_one_update_statement_per_changed_record(): void
+    public function test_writes_all_changed_records_of_a_batch_in_one_update_statement(): void
     {
         $this->store(1);
         $this->store(2);
@@ -262,7 +262,37 @@ class CreateOrUpdateServiceTest extends TestCase
 
         $this->runService([self::item(1, ['first_name' => 'X']), self::item(2, ['first_name' => 'Y']), self::item(3, ['first_name' => 'Z'])]);
 
-        $this->assertSame(3, $this->updateStatements);
+        $this->assertSame(1, $this->updateStatements);
+        $this->assertSame(['X', 'Y', 'Z'], Person::orderBy('crm_id')->pluck('first_name')->all());
+        $this->assertSame([self::RUN_AT], Person::pluck('updated_at')->map(fn ($date) => $date->toDateTimeString())->unique()->values()->all());
+    }
+
+    public function test_writes_more_than_500_changed_records_in_batches_of_500(): void
+    {
+        $now = now()->toDateTimeString();
+        Person::insert(array_map(fn (int $i) => [
+            'brand_id' => 1, 'crm_id' => $i, 'email' => "person{$i}@test.com", 'first_name' => 'Old', 'created_at' => $now, 'updated_at' => $now,
+        ], range(1, 501)));
+
+        $this->runService(array_map(fn (int $i) => self::item($i, ['first_name' => "New {$i}"]), range(1, 501)));
+
+        $this->assertSame(2, $this->updateStatements);
+        $this->assertSame(0, Person::where('first_name', 'Old')->count());
+        $this->assertSame('New 1', Person::where('crm_id', 1)->value('first_name'));
+        $this->assertSame('New 501', Person::where('crm_id', 501)->value('first_name'));
+        $this->assertSame(501, Person::where('updated_at', self::RUN_AT)->count());
+    }
+
+    public function test_writes_null_and_text_values_of_different_records_in_one_statement(): void
+    {
+        $this->store(1, ['last_name' => 'Smith']);
+        $this->store(2, ['last_name' => null]);
+        $this->store(3, ['last_name' => 'Jones']);
+
+        $this->runService([self::item(1, ['last_name' => null]), self::item(2, ['last_name' => 'Brown']), self::item(3, ['last_name' => ''])], reliableKeys: ['last_name']);
+
+        $this->assertSame(1, $this->updateStatements);
+        $this->assertSame([1 => null, 2 => 'Brown', 3 => ''], Person::orderBy('crm_id')->pluck('last_name', 'crm_id')->all());
     }
 
     public function test_matches_a_null_match_key_to_a_stored_null(): void
@@ -468,6 +498,20 @@ class CreateOrUpdateServiceTest extends TestCase
         $this->assertSame(self::RUN_AT, $person->updated_at->toDateTimeString());
     }
 
+    public function test_writes_the_default_value_on_every_record_of_a_batch(): void
+    {
+        $anna = $this->store(1, ['email' => 'old1@test.com', 'first_name' => 'Anna']);
+        $ben = $this->store(2, ['email' => 'old2@test.com', 'first_name' => 'Ben']);
+
+        $this->runService(
+            [self::item(1, ['email' => 'new1@test.com', 'first_name' => 'Ignored']), self::item(2, ['email' => 'new2@test.com', 'first_name' => 'Ignored'])],
+            options: ['defaultValuesForReliableKeys' => ['first_name' => 'Default']],
+        );
+
+        $this->assertSame(['email' => 'new1@test.com', 'first_name' => 'Default'], $anna->refresh()->only(['email', 'first_name']));
+        $this->assertSame(['email' => 'new2@test.com', 'first_name' => 'Default'], $ben->refresh()->only(['email', 'first_name']));
+    }
+
     public function test_leaves_a_record_alone_when_the_default_value_is_already_stored(): void
     {
         $person = $this->store(1, ['first_name' => 'Default']);
@@ -530,6 +574,47 @@ class CreateOrUpdateServiceTest extends TestCase
 
         $this->assertSame('Filled', $empty->refresh()->last_name);
         $this->assertSame('Kept', $filled->refresh()->last_name);
+    }
+
+    public function test_if_null_then_update_decides_per_record_within_one_batch(): void
+    {
+        // In one statement, a column empty in one record must not be written to another that has it filled
+        $empty = $this->store(1, ['last_name' => null, 'postcode' => '3000']);
+        $filled = $this->store(2, ['last_name' => 'Kept', 'postcode' => null]);
+        $both = $this->store(3, ['last_name' => null, 'postcode' => null]);
+
+        $this->runService(
+            [
+                self::item(1, ['email' => 'new1@test.com', 'last_name' => 'Filled', 'postcode' => '9999']),
+                self::item(2, ['email' => 'new2@test.com', 'last_name' => 'Overwritten', 'postcode' => '2000']),
+                self::item(3, ['email' => 'new3@test.com', 'last_name' => 'Both', 'postcode' => '4000']),
+            ],
+            reliableKeys: ['email'],
+            options: ['rules' => [RulesProvider::IF_NULL_THEN_UPDATE]],
+        );
+
+        $this->assertSame(1, $this->updateStatements);
+        $this->assertSame(['email' => 'new1@test.com', 'last_name' => 'Filled', 'postcode' => '3000'], $empty->refresh()->only(['email', 'last_name', 'postcode']));
+        $this->assertSame(['email' => 'new2@test.com', 'last_name' => 'Kept', 'postcode' => '2000'], $filled->refresh()->only(['email', 'last_name', 'postcode']));
+        $this->assertSame(['email' => 'new3@test.com', 'last_name' => 'Both', 'postcode' => '4000'], $both->refresh()->only(['email', 'last_name', 'postcode']));
+    }
+
+    public function test_a_record_with_nothing_to_write_keeps_its_updated_at_when_others_in_the_batch_are_written(): void
+    {
+        $written = $this->store(1, ['email' => 'old@test.com']);
+        $nothingToWrite = $this->store(2, ['last_name' => 'Kept']);
+
+        // The second item differs only in last_name, which the rule keeps as it is not empty, and does not carry
+        // the reliable key: it counts as changed, but the update has nothing to write to it
+        $this->runService(
+            [self::item(1, ['email' => 'new@test.com']), ['brand_id' => 1, 'crm_id' => 2, 'last_name' => 'Other']],
+            reliableKeys: ['email'],
+            options: ['rules' => [RulesProvider::IF_NULL_THEN_UPDATE]],
+        );
+
+        $this->assertSame(self::RUN_AT, $this->updatedAt($written));
+        $this->assertSame(self::STORED_AT, $this->updatedAt($nothingToWrite));
+        $this->assertSame('Kept', $nothingToWrite->last_name);
     }
 
     public function test_with_rules_leaves_a_record_alone_when_no_column_it_carries_differs(): void
