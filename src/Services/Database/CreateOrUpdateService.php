@@ -258,14 +258,18 @@ class CreateOrUpdateService
 
         $this->toUpdate = $this->withoutUnchanged(toUpdate: $this->toUpdate, matchKeys: $matchKeys, reliable: $reliable, defaultValuesForReliableKeys: $defaultValuesForReliableKeys, rules: $rules);
 
-        // Perform bulk operations
-        if (! empty($this->toCreate)) {
-            $this->createService->handle(toCreate: $this->toCreate);
-        }
+        // One transaction, so a failed update also undoes the insert: handle() then clears getToCreate() and
+        // getToUpdate(), and a caller acting on the created records (e.g. logging them) would otherwise miss records
+        // that were written. The next run finds them still new and creates them again
+        $this->model->getConnection()->transaction(function () use ($reliable, $defaultValuesForReliableKeys, $matchKeys, $rules) {
+            if (! empty($this->toCreate)) {
+                $this->createService->handle(toCreate: $this->toCreate);
+            }
 
-        if (! empty($this->toUpdate)) {
-            $this->updateService->handle(toUpdate: $this->toUpdate, reliable: $reliable, defaultValuesForReliableKeys: $defaultValuesForReliableKeys, matchKeys: $matchKeys, rules: $rules);
-        }
+            if (! empty($this->toUpdate)) {
+                $this->updateService->handle(toUpdate: $this->toUpdate, reliable: $reliable, defaultValuesForReliableKeys: $defaultValuesForReliableKeys, matchKeys: $matchKeys, rules: $rules);
+            }
+        });
     }
 
     /**

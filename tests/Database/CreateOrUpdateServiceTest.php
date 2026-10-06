@@ -692,6 +692,20 @@ class CreateOrUpdateServiceTest extends TestCase
         Log::shouldHaveReceived('error')->once();
     }
 
+    public function test_a_failed_update_undoes_the_insert_so_the_created_records_are_not_lost(): void
+    {
+        Log::spy();
+        $this->store(1);
+
+        // The new item is inserted first; the update then fails on the email it just took
+        [$service, $written] = $this->runService([self::item(2, ['email' => 'new@test.com']), self::item(1, ['email' => 'new@test.com'])]);
+
+        $this->assertFalse($written);
+        $this->assertSame([], $service->getToCreate());
+        $this->assertSame(1, Person::count());
+        $this->assertSame('person1@test.com', Person::first()->email);
+    }
+
     public function test_an_item_without_a_match_key_fails_and_writes_nothing(): void
     {
         Log::spy();
