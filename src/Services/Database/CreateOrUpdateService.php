@@ -27,6 +27,9 @@ class CreateOrUpdateService
 
     private array $existingRecords;
 
+    /** @var list<array> Items that match a stored record whose values they would not change, so are not written */
+    private array $unchanged = [];
+
     /** @var list<array{item: array, reasons: list<string>}> */
     private array $rejected = [];
 
@@ -45,6 +48,15 @@ class CreateOrUpdateService
     public function getToUpdate(): array
     {
         return $this->toUpdate;
+    }
+
+    /**
+     * Items that match a stored record but would not change it, so were not updated (and their updated_at not
+     * touched). They are left out of getToUpdate().
+     */
+    public function getUnchanged(): array
+    {
+        return $this->unchanged;
     }
 
     public function getExistingRecords(): array
@@ -87,6 +99,7 @@ class CreateOrUpdateService
         $this->toUpdate = [];
         $this->existingRecords = [];
         $this->rejected = [];
+        $this->unchanged = [];
 
         try {
             if (empty($this->items)) {
@@ -243,6 +256,8 @@ class CreateOrUpdateService
             }
         }
 
+        $this->toUpdate = $this->withoutUnchanged(toUpdate: $this->toUpdate, matchKeys: $matchKeys, reliable: $reliable, defaultValuesForReliableKeys: $defaultValuesForReliableKeys, rules: $rules);
+
         // Perform bulk operations
         if (! empty($this->toCreate)) {
             $this->createService->handle(toCreate: $this->toCreate);
@@ -251,5 +266,36 @@ class CreateOrUpdateService
         if (! empty($this->toUpdate)) {
             $this->updateService->handle(toUpdate: $this->toUpdate, reliable: $reliable, defaultValuesForReliableKeys: $defaultValuesForReliableKeys, matchKeys: $matchKeys, rules: $rules);
         }
+    }
+
+    /**
+     * Drops the updates that would not change the stored record (see UnchangedRecords), so an unchanged record is
+     * not written and its updated_at not touched. The stored values are read raw, without the model's casts, as
+     * the items carry raw values too.
+     */
+    private function withoutUnchanged(array $toUpdate, array $matchKeys, array $reliable, array $defaultValuesForReliableKeys, ?array $rules): array
+    {
+        if (empty($toUpdate)) {
+            return [];
+        }
+
+        $unchangedRecords = new UnchangedRecords;
+        $compareColumns = $unchangedRecords->columnsToCompare(toUpdate: $toUpdate, matchKeys: $matchKeys, reliable: $reliable, hasRules: ! empty($rules));
+
+        if (empty($compareColumns)) {
+            return $toUpdate;
+        }
+
+        $tuples = array_map(fn (array $update) => Arr::only($update['existing'], $matchKeys), $toUpdate);
+        $partition = $unchangedRecords->partition(
+            toUpdate: $toUpdate,
+            storedRows: $this->findRowsMatchingTuples($compareColumns, $tuples, $matchKeys),
+            matchKeys: $matchKeys,
+            compareColumns: $compareColumns,
+            defaultValuesForReliableKeys: $defaultValuesForReliableKeys,
+        );
+        $this->unchanged = $partition['unchanged'];
+
+        return $partition['changed'];
     }
 }

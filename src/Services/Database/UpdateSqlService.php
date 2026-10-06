@@ -145,6 +145,10 @@ class UpdateSqlService
         if ($value instanceof DateTimeInterface) {
             $value = $value->format('Y-m-d H:i:s');
         }
+        // PDO quotes false as '', which MySQL in strict mode rejects for an integer column, failing the whole update
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
 
         return $this->model->getConnection()->getPdo()->quote($value);
     }
