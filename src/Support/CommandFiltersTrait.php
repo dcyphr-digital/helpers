@@ -25,6 +25,18 @@ trait CommandFiltersTrait
     protected const int DEFAULT_SUB_DAYS = 3;
 
     /**
+     * The datetimes from_date and to_date accept, besides a date only (Y-m-d). ISO 8601 may end in Z for UTC.
+     */
+    private const array RANGE_DATETIME_FORMATS = [
+        'Y-m-d H:i:s',
+        'Y-m-d H:i',
+        'Y-m-d\\TH:i:s',
+        'Y-m-d\\TH:i',
+        'Y-m-d\\TH:i:sP',
+        'Y-m-d\\TH:iP',
+    ];
+
+    /**
      * Split a comma-separated string into trimmed, non-empty parts.
      *
      * @return list<string>
@@ -251,12 +263,12 @@ trait CommandFiltersTrait
                 $from = $this->parseRangeBoundary($fromDate, 'from');
                 $to = $this->parseRangeBoundary($toDate, 'to');
             } catch (Throwable $e) {
-                $this->fail('Invalid from_date or to_date. Use Y-m-d, or a datetime (e.g. Y-m-d H:i:s, or ISO 8601).');
+                $this->fail('Invalid from_date or to_date. Use Y-m-d, Y-m-d H:i, Y-m-d H:i:s or ISO 8601 (e.g. 2026-10-07T10:00:00+11:00).');
             }
 
-            // `to` must be strictly after `from` (date-only boundaries use start/end of day on that calendar day)
+            // `to` must be strictly after `from` (date-only boundaries use start/end of day, so one day is a valid range)
             if ($to->lte($from)) {
-                $this->fail('Invalid date range: to_date must be on or after from_date (got from_date='.$fromDate.', to_date='.$toDate.').');
+                $this->fail('Invalid date range: to_date must be after from_date (got from_date='.$fromDate.', to_date='.$toDate.').');
             }
             $this->filters['date_range'] = [
                 'from' => $from,
@@ -298,7 +310,12 @@ trait CommandFiltersTrait
      * Parse a CLI date or datetime for a range boundary.
      *
      * - Date-only `Y-m-d`: `from` uses start of day, `to` uses end of day (inclusive calendar-day range).
-     * - Any value with a time or timezone: parsed as an exact instant via {@see Carbon::parse()}.
+     * - A datetime in one of RANGE_DATETIME_FORMATS: that exact instant. Without an offset it is app time; with one
+     *   (e.g. +11:00 or Z) it is converted to app time.
+     *
+     * Each value must read back as it was written, so an impossible date or time (2026-02-30 10:00, 25:00) fails
+     * instead of rolling over. Words Carbon::parse() would take (tomorrow, +1 year) fail too, as a range given in
+     * them would depend on when the command runs.
      */
     private function parseRangeBoundary(string $value, string $boundary): Carbon
     {
@@ -316,7 +333,25 @@ trait CommandFiltersTrait
                 : $parsed->copy()->endOfDay();
         }
 
-        return Carbon::parse($value);
+        // UTC written as Z, e.g. 2026-10-07T10:00:00Z
+        $value = preg_replace('/Z$/', '+00:00', $value);
+
+        foreach (self::RANGE_DATETIME_FORMATS as $format) {
+            try {
+                // ! sets the parts the format leaves out (e.g. the seconds of Y-m-d H:i) to 0, not to now
+                $parsed = Carbon::createFromFormat('!'.$format, $value);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($parsed !== false && $parsed->format($format) === $value) {
+                // The same instant in the app timezone: queries bind a Carbon as its wall time without converting it,
+                // and the dates they compare it to are stored in the app timezone
+                return $parsed->setTimezone(Carbon::now()->getTimezone());
+            }
+        }
+
+        throw new InvalidArgumentException('Invalid datetime value');
     }
 
     private function setupLog(): void
