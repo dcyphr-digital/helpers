@@ -356,7 +356,34 @@ trait CommandFiltersTrait
 
     private function setupLog(): void
     {
-        $this->filters['should_log'] = in_array(Str::lower($this->option('log')), ['yes', 'y']);
+        $this->filters['should_log'] = $this->parseYesNoOption('log');
+    }
+
+    /**
+     * A yes/no option, in any letter case: yes, y, true or 1 is yes; no, n, false or 0 is no. Given without a value
+     * (e.g. --log) it is yes; not given, it is its default. Anything else fails the command, as a typo (yse) or an
+     * empty value would otherwise quietly count as no.
+     */
+    protected function parseYesNoOption(string $name): bool
+    {
+        $value = $this->option($name);
+
+        // Given on the command line without a value, e.g. --log
+        if ($value === null && $this->input->hasParameterOption('--'.$name)) {
+            return true;
+        }
+
+        $normalised = Str::lower(trim((string) $value));
+
+        if (in_array($normalised, ['yes', 'y', 'true', '1'], true)) {
+            return true;
+        }
+
+        if (in_array($normalised, ['no', 'n', 'false', '0'], true) || $value === null) {
+            return false;
+        }
+
+        $this->fail("Invalid {$name} '{$value}': use Yes or No.");
     }
 
     private function setupIncomingBrandFilters(): void
