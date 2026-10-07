@@ -267,11 +267,31 @@ trait CommandFiltersTrait
         }
 
         // Handle sub_days option or default
-        $days = $subDays !== null ? (int) $subDays : self::DEFAULT_SUB_DAYS;
+        $days = $this->parseSubDays($subDays);
         $this->filters['date_range'] = [
             'from' => Carbon::now()->subDays($days)->startOfDay(),
             'to'   => Carbon::now()->endOfDay(),
         ];
+    }
+
+    /**
+     * The days to look back: a whole number of 0 or more, or DEFAULT_SUB_DAYS when not given (an empty option counts
+     * as not given, as for the dates). Anything else fails the command: cast to int, "abc" was 0 (today only) and
+     * "-5" started the range 5 days ahead, so the command synchronised nothing and still reported success.
+     */
+    private function parseSubDays(mixed $subDays): int
+    {
+        $subDays = trim((string) $subDays);
+
+        if ($subDays === '') {
+            return self::DEFAULT_SUB_DAYS;
+        }
+
+        if (! ctype_digit($subDays)) {
+            $this->fail("Invalid sub_days '{$subDays}': use a whole number of days, 0 or more.");
+        }
+
+        return (int) $subDays;
     }
 
     /**
