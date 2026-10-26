@@ -155,7 +155,7 @@ trait ImportHelpers
 
     public function clean($value): false|string
     {
-        $value = trim($value, ' "\'');
+        $value = trim((string) $value, ' "\'');
 
         return iconv('UTF-8', 'UTF-8//IGNORE', $value);
     }

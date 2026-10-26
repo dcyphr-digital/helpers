@@ -51,6 +51,7 @@ class ImportHelpersTest extends TestCase
             'only spaces' => ['   ', ''],
             'only quotes' => ['""', ''],
             'keeps inner spaces' => ['hello world', 'hello world'],
+            'null' => [null, ''],
         ];
     }
 
