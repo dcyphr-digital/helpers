@@ -48,6 +48,10 @@ class SanitizesPhoneNumberTest extends TestCase
             'nz domestic mobile' => ['0212345678', 'New Zealand', '+64212345678'],
             'nz short valid' => ['021234567', 'New Zealand', '+6421234567'],
             'nz already e164' => ['+64212345678', 'New Zealand', '+64212345678'],
+            'au mobile containing a zero' => ['0410345678', 'Australia', '+61410345678'],
+            'au e164 mobile containing a zero' => ['+61410345678', 'Australia', '+61410345678'],
+            'au e164 landline' => ['+61212345678', 'Australia', null],
+            'nz e164 mobile containing a zero' => ['+64210345678', 'New Zealand', '+64210345678'],
         ];
     }
 

@@ -55,10 +55,10 @@ trait SanitizesPhoneNumber
         }
 
         if ($country && array_key_exists($country, self::REPLACE_OUTGOING_PHONE_CODE)) {
-            $phoneNumber = Str::replaceFirst(
+            $phoneNumber = $this->replaceLeadingPhoneCode(
+                $phoneNumber,
                 self::REPLACE_OUTGOING_PHONE_CODE[$country]['search'],
                 self::REPLACE_OUTGOING_PHONE_CODE[$country]['replace'],
-                $phoneNumber
             );
         }
 
@@ -80,10 +80,10 @@ trait SanitizesPhoneNumber
         $originalPhoneNumber = (string) $phoneNumber;
         $phoneNumber = $this->normalizePhoneNumber($originalPhoneNumber);
         if ($country && array_key_exists($country, self::REPLACE_INCOMING_PHONE_CODE)) {
-            $phoneNumber = Str::replaceFirst(
+            $phoneNumber = $this->replaceLeadingPhoneCode(
+                $phoneNumber,
                 self::REPLACE_INCOMING_PHONE_CODE[$country]['search'],
                 self::REPLACE_INCOMING_PHONE_CODE[$country]['replace'],
-                $phoneNumber
             );
         }
 
@@ -104,8 +104,21 @@ trait SanitizesPhoneNumber
         return Str::lower($this->brand->configuration->country ?? null);
     }
 
+    /**
+     * Swap the prefix only when the number starts with it, so a digit in the middle of the number is never replaced.
+     */
+    protected function replaceLeadingPhoneCode(string $phoneNumber, string $search, string $replace): string
+    {
+        return Str::startsWith($phoneNumber, $search)
+            ? $replace.Str::after($phoneNumber, $search)
+            : $phoneNumber;
+    }
+
+    /**
+     * Only Australian mobiles are accepted, written domestically (04…) or in E.164 (+614…).
+     */
     protected function isInvalidAustralianPhoneNumber(?string $country, string $phoneNumber): bool
     {
-        return $country === self::AUSTRALIA && ! Str::startsWith($phoneNumber, '04');
+        return $country === self::AUSTRALIA && ! Str::startsWith($phoneNumber, ['04', '+614']);
     }
 }
