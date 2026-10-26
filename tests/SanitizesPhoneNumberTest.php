@@ -3,7 +3,6 @@
 namespace DcyphrDigital\Helpers\Tests;
 
 use DcyphrDigital\Helpers\Support\SanitizesPhoneNumber;
-use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -42,7 +41,7 @@ class SanitizesPhoneNumberTest extends TestCase
             'au domestic mobile' => ['0412345678', 'Australia', '+61412345678'],
             'au domestic mobile with spaces' => ['0412 345 678', 'Australia', '+61412345678'],
             'au already e164' => ['+61412345678', 'Australia', '+61412345678'],
-            'au landline' => ['0212345678', 'Australia', '+61212345678'],
+            'au landline' => ['0212345678', 'Australia', null],
             'au empty' => ['', 'Australia', null],
             'au null' => [null, 'Australia', null],
             'nz domestic mobile' => ['0212345678', 'New Zealand', '+64212345678'],
@@ -52,44 +51,23 @@ class SanitizesPhoneNumberTest extends TestCase
             'au e164 mobile containing a zero' => ['+61410345678', 'Australia', '+61410345678'],
             'au e164 landline' => ['+61212345678', 'Australia', null],
             'nz e164 mobile containing a zero' => ['+64210345678', 'New Zealand', '+64210345678'],
+            'other country left as is' => ['+15551234567', 'United States', '+15551234567'],
         ];
     }
 
     #[DataProvider('invalidOutgoingProvider')]
-    public function test_sanitize_phone_number_throws_for_invalid_input(
-        mixed $input,
-        string $country,
-        string $expectedMessage,
-    ): void {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage($expectedMessage);
-
-        $this->helper->outgoing($input, $country);
+    public function test_sanitize_phone_number_returns_null_for_invalid_length(mixed $input, string $country): void
+    {
+        $this->assertNull($this->helper->outgoing($input, $country));
     }
 
     public static function invalidOutgoingProvider(): array
     {
         return [
-            'au too short' => [
-                '041234567',
-                'Australia',
-                'The phone number "041234567" is not valid. Please enter a valid Australian phone number starting with 0 or +61 (e.g. 0412 345 678).',
-            ],
-            'au too long' => [
-                '04123456789',
-                'Australia',
-                'The phone number "04123456789" is not valid. Please enter a valid Australian phone number starting with 0 or +61 (e.g. 0412 345 678).',
-            ],
-            'nz too short' => [
-                '02123456',
-                'New Zealand',
-                'The phone number "02123456" is not valid. Please enter a valid New Zealand phone number starting with 0 or +64 (e.g. 021 234 5678).',
-            ],
-            'nz too long' => [
-                '0212345678901',
-                'New Zealand',
-                'The phone number "0212345678901" is not valid. Please enter a valid New Zealand phone number starting with 0 or +64 (e.g. 021 234 5678).',
-            ],
+            'au too short' => ['041234567', 'Australia'],
+            'au too long' => ['04123456789', 'Australia'],
+            'nz too short' => ['02123456', 'New Zealand'],
+            'nz too long' => ['0212345678901', 'New Zealand'],
         ];
     }
 
@@ -109,39 +87,22 @@ class SanitizesPhoneNumberTest extends TestCase
             'au empty' => ['', 'Australia', null],
             'nz e164 to domestic' => ['+64212345678', 'New Zealand', '0212345678'],
             'nz short valid' => ['+642123456', 'New Zealand', '02123456'],
+            'other country left as is' => ['+15551234567', 'United States', '+15551234567'],
         ];
     }
 
     #[DataProvider('invalidIncomingProvider')]
-    public function test_sanitize_incoming_phone_number_throws_for_invalid_input(
-        mixed $input,
-        string $country,
-        string $expectedMessage,
-    ): void {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage($expectedMessage);
-
-        $this->helper->incoming($input, $country);
+    public function test_sanitize_incoming_phone_number_returns_null_for_invalid_length(mixed $input, string $country): void
+    {
+        $this->assertNull($this->helper->incoming($input, $country));
     }
 
     public static function invalidIncomingProvider(): array
     {
         return [
-            'au too short' => [
-                '+614123456',
-                'Australia',
-                'The phone number "+614123456" is not valid. Please enter a valid Australian phone number starting with 0 or +61 (e.g. 0412 345 678).',
-            ],
-            'nz too short' => [
-                '+6421234',
-                'New Zealand',
-                'The phone number "+6421234" is not valid. Please enter a valid New Zealand phone number starting with 0 or +64 (e.g. 021 234 5678).',
-            ],
-            'nz too long' => [
-                '+642123456789',
-                'New Zealand',
-                'The phone number "+642123456789" is not valid. Please enter a valid New Zealand phone number starting with 0 or +64 (e.g. 021 234 5678).',
-            ],
+            'au too short' => ['+614123456', 'Australia'],
+            'nz too short' => ['+6421234', 'New Zealand'],
+            'nz too long' => ['+642123456789', 'New Zealand'],
         ];
     }
 }

@@ -282,7 +282,7 @@ class ImportHelpersTest extends TestCase
     // -------------------------------------------------------------------------
 
     #[DataProvider('cleanPhoneProvider')]
-    public function test_clean_phone(mixed $input, ?string $expected): void
+    public function test_clean_phone(mixed $input, false|string $expected): void
     {
         $this->assertSame($expected, $this->helpers->cleanPhone($input));
     }
@@ -298,12 +298,12 @@ class ImportHelpersTest extends TestCase
             'brisbane landline' => ['712345678', '0712345678'],
             'adelaide landline' => ['812345678', '0812345678'],
             'already formatted 02' => ['0212345678', '0212345678'],
-            'too short' => ['123', null],
-            'too long' => ['04123456789', null],
-            'invalid prefix 05' => ['0512345678', null],
-            'invalid prefix 06' => ['0612345678', null],
-            'invalid prefix 01' => ['0112345678', null],
-            'nine digits wrong' => ['41234567', null],
+            'too short' => ['123', false],
+            'too long' => ['04123456789', false],
+            'invalid prefix 05' => ['0512345678', false],
+            'invalid prefix 06' => ['0612345678', false],
+            'invalid prefix 01' => ['0112345678', false],
+            'nine digits wrong' => ['41234567', false],
         ];
     }
 

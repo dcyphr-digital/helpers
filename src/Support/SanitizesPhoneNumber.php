@@ -3,7 +3,6 @@
 namespace DcyphrDigital\Helpers\Support;
 
 use Illuminate\Support\Str;
-use InvalidArgumentException;
 
 trait SanitizesPhoneNumber
 {
@@ -87,7 +86,7 @@ trait SanitizesPhoneNumber
             );
         }
 
-        if (isset(self::REPLACE_INCOMING_PHONE_CODE[$country]) && Str::length($phoneNumber) < self::REPLACE_INCOMING_PHONE_CODE[$country]['min_length'] || Str::length($phoneNumber) > self::REPLACE_INCOMING_PHONE_CODE[$country]['max_length']) {
+        if (isset(self::REPLACE_INCOMING_PHONE_CODE[$country]) && (Str::length($phoneNumber) < self::REPLACE_INCOMING_PHONE_CODE[$country]['min_length'] || Str::length($phoneNumber) > self::REPLACE_INCOMING_PHONE_CODE[$country]['max_length'])) {
             return null;
         }
 
