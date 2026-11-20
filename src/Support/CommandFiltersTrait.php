@@ -215,6 +215,7 @@ trait CommandFiltersTrait
             PlatformName::PreferenceCentre                                     => $this->resolvePCBrandId(),
             PlatformName::Loyalty                                              => $this->resolveLoyaltyBrandId(),
             PlatformName::WebsiteUI                                            => 0, // for website_ui we don't need a brand_id so it's always 0'
+            PlatformName::ShoeFinder                                           => (int) data_get($this->brand->configuration, 'shoe_finder.brand_id', 0), // the Shoe Finder Results API's brand id
             default                                                            => throw new InvalidArgumentException('Invalid incoming platform name'),
         };
     }

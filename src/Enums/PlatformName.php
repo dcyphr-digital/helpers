@@ -18,6 +18,7 @@ enum PlatformName: string
     case CampaignMonitor = 'campaign_monitor';
     case PreferenceCentre = 'preference_centre';
     case DataSftp = 'data_sftp';
+    case ShoeFinder = 'shoe_finder';
 
     public static function values(): array
     {
